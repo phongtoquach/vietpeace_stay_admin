@@ -1,6 +1,9 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+
+import { AuthProvider } from './context/AuthContext';
 import { AdminProvider } from './context/AdminContext.jsx';
+
 import AdminLayout from './components/layouts/AdminLayout.jsx';
 
 // Auth Pages
@@ -59,78 +62,78 @@ import GeneralSettingsPage from './pages/settings/GeneralSettingsPage.jsx';
 import WebsiteSettingsPage from './pages/settings/WebsiteSettingsPage.jsx';
 
 export default function App() {
-  return (
-    <AdminProvider>
-      <BrowserRouter>
-        <Routes>
-          {/* Public Auth Routes */}
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-          <Route path="/reset-password" element={<ResetPasswordPage />} />
+	return (
+		<AuthProvider>
+			<AdminProvider>
+				<Routes>
+					{/* Public Auth Routes */}
+					<Route path="/login" element={<LoginPage />} />
+					<Route path="/forgot-password" element={<ForgotPasswordPage />} />
+					<Route path="/reset-password" element={<ResetPasswordPage />} />
 
-          {/* Admin Protected Routes */}
-          <Route path="/admin" element={<AdminLayout />}>
-            <Route index element={<Navigate to="/admin/dashboard" replace />} />
-            <Route path="dashboard" element={<DashboardPage />} />
+					{/* Admin Protected Routes */}
+					<Route path="/admin" element={<AdminLayout />}>
+						<Route index element={<Navigate to="/admin/dashboard" replace />} />
+						<Route path="dashboard" element={<DashboardPage />} />
 
-            {/* Bookings */}
-            <Route path="bookings" element={<BookingListPage />} />
-            <Route path="bookings/:id" element={<BookingDetailPage />} />
+						{/* Bookings */}
+						<Route path="bookings" element={<BookingListPage />} />
+						<Route path="bookings/:id" element={<BookingDetailPage />} />
 
-            {/* Accommodations */}
-            <Route path="accommodations" element={<AccommodationListPage />} />
-            <Route path="accommodations/create" element={<AccommodationFormPage />} />
-            <Route path="accommodations/:id" element={<AccommodationDetailPage />} />
-            <Route path="accommodations/:id/edit" element={<AccommodationFormPage />} />
+						{/* Accommodations */}
+						<Route path="accommodations" element={<AccommodationListPage />} />
+						<Route path="accommodations/create" element={<AccommodationFormPage />} />
+						<Route path="accommodations/:id" element={<AccommodationDetailPage />} />
+						<Route path="accommodations/:id/edit" element={<AccommodationFormPage />} />
 
-            {/* Attractions */}
-            <Route path="attractions" element={<AttractionListPage />} />
-            <Route path="attractions/create" element={<AttractionFormPage />} />
-            <Route path="attractions/:id/edit" element={<AttractionFormPage />} />
+						{/* Attractions */}
+						<Route path="attractions" element={<AttractionListPage />} />
+						<Route path="attractions/create" element={<AttractionFormPage />} />
+						<Route path="attractions/:id/edit" element={<AttractionFormPage />} />
 
-            {/* Room Types */}
-            <Route path="room-types" element={<RoomTypeListPage />} />
-            <Route path="room-types/create" element={<RoomTypeFormPage />} />
-            <Route path="room-types/:id/edit" element={<RoomTypeFormPage />} />
+						{/* Room Types */}
+						<Route path="room-types" element={<RoomTypeListPage />} />
+						<Route path="room-types/create" element={<RoomTypeFormPage />} />
+						<Route path="room-types/:id/edit" element={<RoomTypeFormPage />} />
 
-            {/* Locations */}
-            <Route path="locations" element={<LocationManagementPage />} />
+						{/* Locations */}
+						<Route path="locations" element={<LocationManagementPage />} />
 
-            {/* Amenities */}
-            <Route path="amenities" element={<AmenitiesPage />} />
+						{/* Amenities */}
+						<Route path="amenities" element={<AmenitiesPage />} />
 
-            {/* Pricing & Availability */}
-            <Route path="rate-periods" element={<RatePeriodsPage />} />
-            <Route path="rate-periods/create" element={<RatePeriodFormPage />} />
-            <Route path="rate-periods/:id/edit" element={<RatePeriodFormPage />} />
-            <Route path="room-rates" element={<RoomRatesPage />} />
-            <Route path="room-availability" element={<RoomAvailabilityPage />} />
+						{/* Pricing & Availability */}
+						<Route path="rate-periods" element={<RatePeriodsPage />} />
+						<Route path="rate-periods/create" element={<RatePeriodFormPage />} />
+						<Route path="rate-periods/:id/edit" element={<RatePeriodFormPage />} />
+						<Route path="room-rates" element={<RoomRatesPage />} />
+						<Route path="room-availability" element={<RoomAvailabilityPage />} />
 
-            {/* Promotions */}
-            <Route path="promotions" element={<PromotionsPage />} />
+						{/* Promotions */}
+						<Route path="promotions" element={<PromotionsPage />} />
 
-            {/* Customers */}
-            <Route path="customers" element={<CustomerListPage />} />
-            <Route path="customers/:id" element={<CustomerDetailPage />} />
+						{/* Customers */}
+						<Route path="customers" element={<CustomerListPage />} />
+						<Route path="customers/:id" element={<CustomerDetailPage />} />
 
-            {/* Users & Roles */}
-            <Route path="users" element={<AdminUsersPage />} />
-            <Route path="roles" element={<RolesPermissionsPage />} />
+						{/* Users & Roles */}
+						<Route path="users" element={<AdminUsersPage />} />
+						<Route path="roles" element={<RolesPermissionsPage />} />
 
-            {/* Reports */}
-            <Route path="reports/revenue" element={<RevenueReportPage />} />
-            <Route path="reports/bookings" element={<BookingReportPage />} />
-            <Route path="reports/occupancy" element={<OccupancyReportPage />} />
+						{/* Reports */}
+						<Route path="reports/revenue" element={<RevenueReportPage />} />
+						<Route path="reports/bookings" element={<BookingReportPage />} />
+						<Route path="reports/occupancy" element={<OccupancyReportPage />} />
 
-            {/* Settings */}
-            <Route path="settings/general" element={<GeneralSettingsPage />} />
-            <Route path="settings/website" element={<WebsiteSettingsPage />} />
-          </Route>
+						{/* Settings */}
+						<Route path="settings/general" element={<GeneralSettingsPage />} />
+						<Route path="settings/website" element={<WebsiteSettingsPage />} />
+					</Route>
 
-          {/* Fallback route */}
-          <Route path="*" element={<Navigate to="/admin/dashboard" replace />} />
-        </Routes>
-      </BrowserRouter>
-    </AdminProvider>
+					{/* Fallback route */}
+					<Route path="*" element={<Navigate to="/admin/dashboard" replace />} />
+				</Routes>
+			</AdminProvider>
+		</AuthProvider>
   );
 }
