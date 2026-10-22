@@ -1,6 +1,9 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
+
+import AuthContext from "../../context/AuthContext";
 import { useAdmin } from '../../context/AdminContext.jsx';
+
 import Breadcrumb from '../common/Breadcrumb.jsx';
 import {
   Menu,
@@ -13,9 +16,11 @@ import {
 } from 'lucide-react';
 
 export default function Header({ breadcrumbItems = [] }) {
+
+  console.log("[Header] Vừa vào hàm component Header !");
+
   const {
     currentUser,
-    logout,
     isSidebarOpen,
     setIsSidebarOpen,
     isMobileSidebarOpen,
@@ -23,12 +28,23 @@ export default function Header({ breadcrumbItems = [] }) {
     showToast
   } = useAdmin();
 
+  const { currentPathName, currentLoggedInUser, logout } = useContext(AuthContext);
+
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const dropdownRef = useRef(null);
   const notifRef = useRef(null);
   const navigate = useNavigate();
+
+  useEffect(() => {
+      console.log("[Header] đang chạy useEffect() của component Header !");
+      
+      // hàm cleanup
+      return () => {
+          console.log("[Header] đang chạy hàm cleanup của useEffect() !");
+      };
+  });
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -60,7 +76,7 @@ export default function Header({ breadcrumbItems = [] }) {
 
   const handleLogout = () => {
     logout();
-    navigate('/login');
+    //navigate('/login');
   };
 
   return (
@@ -171,19 +187,19 @@ export default function Header({ breadcrumbItems = [] }) {
             aria-expanded={dropdownOpen}
             aria-label="Menu tài khoản"
           >
-            {currentUser?.avatar ? (
+            {currentLoggedInUser?.avatarUrl ? (
               <img
-                src={currentUser.avatar}
-                alt={currentUser.name}
+                src={currentLoggedInUser.avatarUrl}
+                alt={currentLoggedInUser.displayName}
                 className="header-user-avatar"
                 referrerPolicy="no-referrer"
               />
             ) : (
               <div className="header-user-avatar">
-                {currentUser?.name ? currentUser.name.slice(0, 2).toUpperCase() : 'QT'}
+                {currentLoggedInUser?.displayName ? currentLoggedInUser.displayName.slice(0, 2).toUpperCase() : 'QT'}
               </div>
             )}
-            <span className="header-user-name">{currentUser?.name || 'Quản trị viên'}</span>
+            <span className="header-user-name">{currentLoggedInUser?.displayName || 'Quản trị viên'}</span>
             <ChevronDown size={14} color="#6B7280" />
           </button>
 
@@ -191,10 +207,10 @@ export default function Header({ breadcrumbItems = [] }) {
             <div className="header-user-dropdown">
               <div style={{ padding: '8px 14px', borderBottom: '1px solid #E5E7EB' }}>
                 <div style={{ fontSize: '13px', fontWeight: 600, color: '#292D32' }}>
-                  {currentUser?.name}
+                  {currentLoggedInUser?.name}
                 </div>
                 <div style={{ fontSize: '11.5px', color: '#6B7280' }}>
-                  {currentUser?.role === 'Super Administrator' ? 'Quản trị viên cấp cao' : currentUser?.role}
+                  {currentLoggedInUser?.role === 'ADMIN' ? 'Administrator' : 'Accommodation Manager'}
                 </div>
               </div>
 

@@ -38,6 +38,9 @@ export function AuthProvider({ children }) {
         refRouteUrl.current = currentUrl;
     }
 
+    console.log("[AuthProvider] Value hiện tại của biến useState currentLoggedInUser : ");
+    console.log(currentLoggedInUser);
+
     // function test1() {
     //     console.log("[AuthProvider] await - Đang chạy test1() !");
     // }
@@ -78,8 +81,8 @@ export function AuthProvider({ children }) {
             
             const response_data = await api_response.json();
             console.log("[AuthProvider - checkAuthen] API response OK và Login Session còn tồn tại ! Data của response_data : ", response_data);
-            console.log("[AuthProvider - checkAuthen] setCurrentLoggedInUser(response_data.data.customerInfo) va return true !");
-            setCurrentLoggedInUser(response_data.data.customerInfo);
+            console.log("[AuthProvider - checkAuthen] setCurrentLoggedInUser(response_data.data.userInfo) va return true !");
+            setCurrentLoggedInUser(response_data.data.userInfo);
 
             return true;
         }
@@ -143,8 +146,8 @@ export function AuthProvider({ children }) {
             if (!api_response.ok) {
                 // status code 401 xác nhận session đăng nhập của user không tồn tại
                 if (api_response.status === 401) {
-                    console.log("[AuthProvider - logout] status code cua response cua API /auth/logout la 401 ! chuyển qua route trang Home !");
-                    navigate("/");
+                    console.log("[AuthProvider - logout] status code cua response cua API /auth/logout la 401 ! chuyển qua route trang Login !");
+                    navigate("/login");
                     return false;
                 }
                 else {
@@ -154,16 +157,18 @@ export function AuthProvider({ children }) {
             
             const response_data = await api_response.json();
             console.log("[AuthProvider - logout] Logout thanh cong ! Data của response_data : ", response_data);
+
+            navigate("/login");
             
-            console.log("[AuthProvider - logout] current_url : " + current_url);
-            if (current_url !== "/") {
-                console.log("[AuthProvider - logout] Dang o route khac trang Home ! Chuyen qua route trang Home !");
-                navigate("/");
-            }
-            else {
-                console.log("[AuthProvider - logout] Dang o ngay route trang Home ! setCurrentLoggedInUser(null) !");
-                setCurrentLoggedInUser(null);
-            }
+            // console.log("[AuthProvider - logout] current_url : " + current_url);
+            // if (current_url !== "/") {
+            //     console.log("[AuthProvider - logout] Dang o route khac trang Home ! Chuyen qua route trang Home !");
+            //     navigate("/");
+            // }
+            // else {
+            //     console.log("[AuthProvider - logout] Dang o ngay route trang Home ! setCurrentLoggedInUser(null) !");
+            //     setCurrentLoggedInUser(null);
+            // }
         }
         catch (error) {
             console.error("[AuthProvider - logout - catch] logout() failed:", error);
@@ -176,6 +181,7 @@ export function AuthProvider({ children }) {
     return (
         <AuthContext.Provider value={{
             currentLoggedInUser,
+            setCurrentLoggedInUser,
             isCheckingAuthen,
             authError,
             currentUrl,
