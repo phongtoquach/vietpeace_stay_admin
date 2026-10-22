@@ -130,8 +130,8 @@ export function AuthProvider({ children }) {
 
 
     // Hàm logout customer
-    const logout = useCallback(async (current_url) => { 
-        console.log("[AuthProvider - logout] Đang chạy hàm logout() ! current_url : " + current_url);
+    const logout = useCallback(async () => { 
+        console.log("[AuthProvider - logout] Đang chạy hàm logout() !");
         
         try {
             const api_response = await fetch(`${API_URL}/auth/logout`, {
@@ -156,7 +156,7 @@ export function AuthProvider({ children }) {
             }
             
             const response_data = await api_response.json();
-            console.log("[AuthProvider - logout] Logout thanh cong ! Data của response_data : ", response_data);
+            console.log("[AuthProvider - logout] Logout thanh cong ! Chuyen den route /login ! Data của response_data : ", response_data);
 
             navigate("/login");
             

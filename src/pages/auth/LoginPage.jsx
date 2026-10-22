@@ -114,7 +114,7 @@ export default function LoginPage() {
             return;
         }
 
-        //console.log("[handleSubmit] Form is valid ! Bat dau login !");
+        console.log("[handleSubmit] Form is valid ! Bat dau goi API login !");
 		//return;
 
 		//login(email, password);
@@ -145,7 +145,7 @@ export default function LoginPage() {
 			return;
 		}
 
-		//console.log("[LoginPage - handleSubmit] response_data.success = true ! Thực hiện setCurrentLoggedInUser() !");
+		console.log("[LoginPage - handleSubmit] response_data.success = true ! Chuyen den route /admin/dashboard !");
 		//setCurrentLoggedInUser(response_data.data.loginUserData);
 
 		navigate('/admin/dashboard');
