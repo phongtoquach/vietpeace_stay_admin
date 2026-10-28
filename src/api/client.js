@@ -1,14 +1,6 @@
+// API admin dùng chung cho toàn bộ Admin Panel.
 const API_BASE = "http://localhost:3002/api/admin";
 
-/**
- * Hàm gửi request dùng chung cho toàn bộ Admin Panel.
- *
- * Adapter nghiệp vụ không cần lặp lại các việc:
- * - nối API_BASE;
- * - gửi cookie session;
- * - đọc JSON;
- * - chuyển lỗi HTTP thành Error dễ xử lý ở UI.
- */
 export async function apiFetch(path, options = {}) {
   const response = await fetch(`${API_BASE}${path}`, {
     ...options,
@@ -17,8 +9,8 @@ export async function apiFetch(path, options = {}) {
       ...(options.body instanceof FormData
         ? {}
         : { "Content-Type": "application/json" }),
-      ...(options.headers || {})
-    }
+      ...(options.headers || {}),
+    },
   });
 
   const payload = await response.json().catch(() => null);
