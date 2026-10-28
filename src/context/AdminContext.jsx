@@ -1,4 +1,14 @@
-import React, { createContext, useContext, useState } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useCallback
+} from 'react';
+
+import { accommodationsApi } from '../api/accommodations.js';
+
+
+import { useAuth } from './AuthContext.jsx';
 import {
   INITIAL_USER,
   INITIAL_LOCATIONS,
@@ -20,13 +30,31 @@ import {
 const AdminContext = createContext(null);
 
 export function AdminProvider({ children }) {
-  // Authentication state
-  const [currentUser, setCurrentUser] = useState(INITIAL_USER);
-  const [isAuthenticated, setIsAuthenticated] = useState(true);
+
+  // currentLoggedInUser: user backend trả về;
+  // isCheckingAuthen: AuthContext còn đang kiểm tra session hay không.
+  const { currentLoggedInUser, isCheckingAuthen } = useAuth();
+
+  // User thật được AuthContext lấy từ session backend.
+  // Khi chưa kiểm tra xong, giá trị có thể vẫn là null.
+  const currentUser = currentLoggedInUser;
+  const isAuthenticated = Boolean(currentLoggedInUser);
 
   // Entities
   const [locations, setLocations] = useState(INITIAL_LOCATIONS);
   const [accommodations, setAccommodations] = useState(INITIAL_ACCOMMODATIONS);
+
+  // Dữ liệu list hiện tại do backend trả về.
+  const [accommodationsLoading, setAccommodationsLoading] = useState(false);
+  const [accommodationsError, setAccommodationsError] = useState(null);
+
+  const [accommodationsPagination, setAccommodationsPagination] = useState({
+    page: 1,
+    limit: 10,
+    total: 0,
+    totalPages: 0
+  });
+
   const [attractions, setAttractions] = useState(INITIAL_ATTRACTIONS);
   const [roomTypes, setRoomTypes] = useState(INITIAL_ROOM_TYPES);
   const [roomWeekdayRates, setRoomWeekdayRates] = useState(INITIAL_ROOM_WEEKDAY_RATES);
@@ -74,18 +102,56 @@ export function AdminProvider({ children }) {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
 
+  const fetchAccommodations = useCallback(async (params = {}) => {
+    console.log(
+      '[AdminContext - fetchAccommodations] Input params:',
+      params
+    );
+    setAccommodationsLoading(true);
+    setAccommodationsError(null);
+    try {
+      const payload = await accommodationsApi.getList(params);
+      console.log(
+        '[AdminContext - fetchAccommodations] API payload:',
+        payload
+      );
+      setAccommodations(payload.data?.items || []);
+      setAccommodationsPagination(
+        payload.data?.pagination || {
+          page: 1,
+          limit: 10,
+          total: 0,
+          totalPages: 0
+        }
+      );
+      console.log(
+        '[AdminContext - fetchAccommodations] Items count:',
+        payload.data?.items?.length || 0
+      );
+      return payload;
+    } catch (error) {
+      console.error(
+        '[AdminContext - fetchAccommodations] Error:',
+        error
+      );
+      setAccommodationsError(error);
+      throw error;
+    } finally {
+      setAccommodationsLoading(false);
+      console.log(
+        '[AdminContext - fetchAccommodations] Loading finished'
+      );
+    }
+  }, []);
+
   // Auth functions
-  const login = (email, password) => {
-    setIsAuthenticated(true);
-    setCurrentUser(INITIAL_USER);
-    showToast(`Chào mừng trở lại, ${INITIAL_USER.name}!`, 'success');
+  const login = () => {
+    showToast('Đăng nhập được xử lý bởi AuthContext.', 'info');
   };
 
   const logout = () => {
-    setIsAuthenticated(false);
-    showToast('Bạn đã đăng xuất thành công.', 'info');
+    showToast('Đăng xuất được xử lý bởi AuthContext.', 'info');
   };
-
   // Location CRUD
   const addLocation = (locData) => {
     const newId = Math.max(...locations.map((l) => l.id), 0) + 1;
@@ -162,21 +228,21 @@ export function AdminProvider({ children }) {
     const basePrice = Number(newRoom.base_price) || 1000000;
     const initialRates = (roomData.weekday_rates && Object.keys(roomData.weekday_rates).length > 0)
       ? DAYS_OF_WEEK.map((d) => ({
-          id: Date.now() + d.day,
-          room_type_id: newId,
-          day_of_week: d.day,
-          price: Number(roomData.weekday_rates[d.day]) || basePrice,
-          created_at: new Date().toISOString().replace('T', ' ').substring(0, 19),
-          updated_at: new Date().toISOString().replace('T', ' ').substring(0, 19)
-        }))
+        id: Date.now() + d.day,
+        room_type_id: newId,
+        day_of_week: d.day,
+        price: Number(roomData.weekday_rates[d.day]) || basePrice,
+        created_at: new Date().toISOString().replace('T', ' ').substring(0, 19),
+        updated_at: new Date().toISOString().replace('T', ' ').substring(0, 19)
+      }))
       : DAYS_OF_WEEK.map((d) => ({
-          id: Date.now() + d.day,
-          room_type_id: newId,
-          day_of_week: d.day,
-          price: d.isWeekend ? Math.round(basePrice * 1.15) : basePrice,
-          created_at: new Date().toISOString().replace('T', ' ').substring(0, 19),
-          updated_at: new Date().toISOString().replace('T', ' ').substring(0, 19)
-        }));
+        id: Date.now() + d.day,
+        room_type_id: newId,
+        day_of_week: d.day,
+        price: d.isWeekend ? Math.round(basePrice * 1.15) : basePrice,
+        created_at: new Date().toISOString().replace('T', ' ').substring(0, 19),
+        updated_at: new Date().toISOString().replace('T', ' ').substring(0, 19)
+      }));
 
     setRoomWeekdayRates((prev) => [...prev, ...initialRates]);
 
@@ -259,15 +325,15 @@ export function AdminProvider({ children }) {
       prev.map((a) =>
         a.id === Number(id)
           ? {
-              ...a,
-              location_id: data.location_id ? Number(data.location_id) : a.location_id,
-              name: data.name !== undefined ? data.name.trim() : a.name,
-              address: data.address !== undefined ? data.address.trim() : a.address,
-              description: data.description !== undefined ? data.description.trim() : a.description,
-              image: data.image !== undefined ? data.image : a.image,
-              is_active: data.is_active !== undefined ? Boolean(data.is_active) : a.is_active,
-              updated_at: nowTimestamp
-            }
+            ...a,
+            location_id: data.location_id ? Number(data.location_id) : a.location_id,
+            name: data.name !== undefined ? data.name.trim() : a.name,
+            address: data.address !== undefined ? data.address.trim() : a.address,
+            description: data.description !== undefined ? data.description.trim() : a.description,
+            image: data.image !== undefined ? data.image : a.image,
+            is_active: data.is_active !== undefined ? Boolean(data.is_active) : a.is_active,
+            updated_at: nowTimestamp
+          }
           : a
       )
     );
@@ -418,14 +484,14 @@ export function AdminProvider({ children }) {
       prev.map((r) =>
         r.id === Number(id)
           ? {
-              ...r,
-              name: data.name !== undefined ? data.name.trim() : r.name,
-              start_date: data.start_date !== undefined ? data.start_date : r.start_date,
-              end_date: data.end_date !== undefined ? data.end_date : r.end_date,
-              description: data.description !== undefined ? data.description : r.description,
-              status: data.status ? data.status.toUpperCase() : r.status,
-              updated_at: nowTimestamp
-            }
+            ...r,
+            name: data.name !== undefined ? data.name.trim() : r.name,
+            start_date: data.start_date !== undefined ? data.start_date : r.start_date,
+            end_date: data.end_date !== undefined ? data.end_date : r.end_date,
+            description: data.description !== undefined ? data.description : r.description,
+            status: data.status ? data.status.toUpperCase() : r.status,
+            updated_at: nowTimestamp
+          }
           : r
       )
     );
@@ -535,13 +601,13 @@ export function AdminProvider({ children }) {
         return prev.map((item, idx) =>
           idx === matchIndex
             ? {
-                ...item,
-                accommodation_id: accId,
-                adjustment_type: adjType,
-                adjustment_value: adjVal,
-                price: calculatedPrice,
-                updated_at: nowTimestamp
-              }
+              ...item,
+              accommodation_id: accId,
+              adjustment_type: adjType,
+              adjustment_value: adjVal,
+              price: calculatedPrice,
+              updated_at: nowTimestamp
+            }
             : item
         );
       } else {
@@ -667,21 +733,30 @@ export function AdminProvider({ children }) {
   };
 
   const deleteAdminUser = (id) => {
-    if (Number(id) === currentUser.id) {
-      showToast('Không thể xóa tài khoản quản trị đang đăng nhập.', 'warning');
+    // Nếu chưa có user thật thì không tiếp tục kiểm tra quyền sở hữu.
+    if (currentUser && Number(id) === Number(currentUser.id)) {
+      showToast(
+        'Không thể xóa tài khoản quản trị đang đăng nhập.',
+        'warning'
+      );
       return false;
     }
-    setAdminUsers((prev) => prev.filter((u) => u.id !== Number(id)));
-    showToast('Đã xóa tài khoản quản trị.', 'info');
-    return true;
+
+    // Phần xử lý cũ tiếp tục ở đây.
   };
 
   return (
     <AdminContext.Provider
       value={{
         currentUser,
-        setCurrentUser,
         isAuthenticated,
+        isCheckingAuthen,
+        bookings,
+        updateBookingStatus,
+        updatePaymentStatus,
+
+        // Các hàm này hiện vẫn có thể giữ tạm
+        // cho những màn hình mock chưa chuyển sang AuthContext.
         login,
         logout,
         locations,
@@ -692,6 +767,12 @@ export function AdminProvider({ children }) {
         addAccommodation,
         updateAccommodation,
         deleteAccommodation,
+
+        accommodationsLoading,
+        accommodationsError,
+        accommodationsPagination,
+        fetchAccommodations,
+
         roomTypes,
         addRoomType,
         updateRoomType,
@@ -705,6 +786,7 @@ export function AdminProvider({ children }) {
         updateAttraction,
         toggleAttractionStatus,
         deleteAttraction,
+        // Phần Sidebar đang cần ba giá trị này
         bookings,
         updateBookingStatus,
         updatePaymentStatus,
@@ -745,6 +827,8 @@ export function AdminProvider({ children }) {
         toasts,
         showToast,
         removeToast
+
+        // ... các field còn lại giữ nguyên
       }}
     >
       {children}

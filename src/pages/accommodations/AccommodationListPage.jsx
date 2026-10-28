@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAdmin } from '../../context/AdminContext.jsx';
 import PageHeader from '../../components/common/PageHeader.jsx';
@@ -9,7 +9,18 @@ import ConfirmDialog from '../../components/common/ConfirmDialog.jsx';
 import { Plus, Eye, Edit2, Trash2, Search, RotateCcw, Star } from 'lucide-react';
 
 export default function AccommodationListPage() {
-  const { accommodations, locations, deleteAccommodation } = useAdmin();
+  const {
+    accommodations,
+    locations,
+    deleteAccommodation,
+    fetchAccommodations,
+    accommodationsLoading,
+    accommodationsError,
+    accommodationsPagination
+  } = useAdmin();
+
+
+
   const [searchParams, setSearchParams] = useSearchParams();
 
   // Filters state
@@ -28,6 +39,63 @@ export default function AccommodationListPage() {
 
   // Confirm delete dialog
   const [deleteTargetId, setDeleteTargetId] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadAccommodations() {
+      const requestParams = {
+        page: currentPage,
+        limit: pageSize
+      };
+      console.group(
+        `[AccommodationListPage] Tải trang ${currentPage}`
+      );
+      console.log(
+        '[1] Params gửi lên API:',
+        requestParams
+      );
+      try {
+        const payload = await fetchAccommodations(requestParams);
+        if (cancelled) {
+          console.warn(
+            '[2] Component đã unmount, bỏ qua response.'
+          );
+          return;
+        }
+        console.log(
+          '[2] API trả về số item:',
+          payload?.data?.items?.length || 0
+        );
+        console.log(
+          '[3] Pagination backend:',
+          payload?.data?.pagination
+        );
+        console.log(
+          '[4] Item đầu tiên của trang:',
+          payload?.data?.items?.[0] || null
+        );
+      } catch (error) {
+        if (!cancelled) {
+          console.error(
+            '[ERROR] Tải danh sách thất bại:',
+            error
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          console.log(
+            '[5] Hoàn tất request trang:',
+            currentPage
+          );
+        }
+        console.groupEnd();
+      }
+    }
+    loadAccommodations();
+    return () => {
+      cancelled = true;
+    };
+  }, [fetchAccommodations, currentPage, pageSize]);
 
   // Map location names for display
   const locationMap = useMemo(() => {
@@ -71,12 +139,11 @@ export default function AccommodationListPage() {
     });
   }, [accommodations, searchTerm, typeFilter, locationFilter, statusFilter, featuredFilter, sortField, sortDirection]);
 
-  // Pagination calculation
-  const totalItems = filteredData.length;
-  const paginatedData = useMemo(() => {
-    const start = (currentPage - 1) * pageSize;
-    return filteredData.slice(start, start + pageSize);
-  }, [filteredData, currentPage, pageSize]);
+  // Dữ liệu đã được backend phân trang sẵn.
+  // Không dùng slice() lần nữa vì sẽ cắt nhầm trang hiện tại.
+  const paginatedData = accommodations;
+
+  const totalItems = accommodationsPagination.total;
 
   const handleResetFilters = () => {
     setSearchTerm('');
@@ -131,9 +198,35 @@ export default function AccommodationListPage() {
           <img
             src={row.cover_image}
             alt={row.name}
-            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+            style={{
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover'
+            }}
             referrerPolicy="no-referrer"
+            onLoad={() => {
+              console.log(
+                '[AccommodationListPage] Ảnh tải thành công:',
+                {
+                  id: row.id,
+                  name: row.name,
+                  src: row.cover_image
+                }
+              );
+            }}
+            onError={(event) => {
+              console.error(
+                '[AccommodationListPage] Ảnh tải thất bại:',
+                {
+                  id: row.id,
+                  name: row.name,
+                  src: row.cover_image,
+                  currentSrc: event.currentTarget.currentSrc
+                }
+              );
+            }}
           />
+
         </div>
       )
     },
@@ -360,26 +453,54 @@ export default function AccommodationListPage() {
         </div>
       </div>
 
-      {/* Main Data Table */}
-      <DataTable
-        columns={columns}
-        data={paginatedData}
-        sortField={sortField}
-        sortDirection={sortDirection}
-        onSort={handleSort}
-        selectedRows={selectedIds}
-        onSelectRow={handleSelectRow}
-        onSelectAll={handleSelectAll}
-        emptyMessage="Không tìm thấy cơ sở lưu trú nào phù hợp với bộ lọc."
-      />
+      {accommodationsLoading && (
+        <div className="empty-state">
+          Đang tải danh sách cơ sở lưu trú...
+        </div>
+      )}
+
+      {accommodationsLoading ? (
+        <div className="empty-state">
+          Đang tải danh sách cơ sở lưu trú...
+        </div>
+      ) : (
+        <DataTable
+          columns={columns}
+          data={paginatedData}
+          sortField={sortField}
+          sortDirection={sortDirection}
+          onSort={handleSort}
+          selectedRows={selectedIds}
+          onSelectRow={handleSelectRow}
+          onSelectAll={handleSelectAll}
+          emptyMessage="Không tìm thấy cơ sở lưu trú nào."
+        />
+      )}
 
       {/* Pagination */}
       <Pagination
         currentPage={currentPage}
         pageSize={pageSize}
         totalItems={totalItems}
-        onPageChange={(page) => setCurrentPage(page)}
+        onPageChange={(page) => {
+          console.log(
+            '[Pagination] Người dùng chọn trang:',
+            page
+          );
+
+          console.log(
+            '[Pagination] Trang hiện tại trước khi đổi:',
+            currentPage
+          );
+
+          setCurrentPage(page);
+        }}
         onPageSizeChange={(size) => {
+          console.log(
+            '[Pagination] Người dùng đổi số dòng:',
+            size
+          );
+
           setPageSize(size);
           setCurrentPage(1);
         }}

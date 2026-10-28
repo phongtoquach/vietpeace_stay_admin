@@ -136,7 +136,14 @@ export default function AccommodationDetailPage() {
         <div style={{ flex: 1, padding: '16px 20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-              <StatusBadge status={accommodation.type} />
+              <StatusBadge
+                status={
+                  accommodation.type?.code ||
+                  accommodation.type?.name ||
+                  accommodation.type ||
+                  ""
+                }
+              />
               <StatusBadge status={accommodation.status} />
               {accommodation.featured && <span className="badge badge-warning">Nổi bật</span>}
               <div style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', color: '#F4C542', marginLeft: 'auto' }}>
