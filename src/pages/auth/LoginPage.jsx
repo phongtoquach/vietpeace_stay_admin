@@ -7,7 +7,7 @@ import { useAdmin } from '../../context/AdminContext.jsx';
 import { Hotel, Eye, EyeOff } from 'lucide-react';
 
 export default function LoginPage() {
-	//const { setCurrentLoggedInUser } = useContext(AuthContext);
+	const { setCurrentLoggedInUser } = useContext(AuthContext);
 
 	const [email, setEmail] = useState('');
 	const [password, setPassword] = useState('');
@@ -18,8 +18,8 @@ export default function LoginPage() {
 
 	console.log("[LoginPage] Day là ngay trước dòng khai báo biến useState formData !");
     const [formData, setFormData] = useState({
-        email: "",
-        password: ""
+        email: "phongqt.admin@example.com",
+        password: "phongqt393699"
     });
 
     console.log("[LoginPage] Day là ngay trước dòng khai báo biến useState formErrors !");
@@ -146,7 +146,7 @@ export default function LoginPage() {
 		}
 
 		console.log("[LoginPage - handleSubmit] response_data.success = true ! Chuyen den route /admin/dashboard !");
-		//setCurrentLoggedInUser(response_data.data.loginUserData);
+		if (setCurrentLoggedInUser) setCurrentLoggedInUser(response_data.data.loginUserData || response_data.data.userInfo);
 
 		navigate('/admin/dashboard');
 	};
@@ -168,6 +168,11 @@ export default function LoginPage() {
 				</div>
 				</div>
 
+				<div style={{ padding: '10px 14px', backgroundColor: '#FEFBE8', border: '1px solid #FDE68A', borderRadius: '6px', fontSize: '12px', color: '#92400E', marginBottom: '16px' }}>
+					<strong>Tài khoản mẫu thử nghiệm:</strong><br />
+					Email: <code>phongqt.admin@example.com</code><br />
+					Mật khẩu: <code>phongqt393699</code>
+				</div>
 				<h1 className="auth-title">Cổng thông tin quản trị</h1>
 				<p className="auth-subtitle">
 				Đăng nhập bằng tài khoản nhân sự nội bộ để quản lý đặt phòng và các cơ sở lưu trú.

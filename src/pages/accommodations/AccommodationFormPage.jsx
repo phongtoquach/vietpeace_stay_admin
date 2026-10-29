@@ -119,9 +119,9 @@ export default function AccommodationFormPage() {
         const prov = getProvinceForLocation(loc.id, locations);
         let label = loc.name;
         if (prov && prov.id !== loc.id) {
-          label = `${loc.name} (${prov.name} - ${loc.type})`;
+          label = `${loc.name} (${prov.name})`;
         } else {
-          label = `${loc.name} (${loc.type})`;
+          label = loc.name;
         }
         return {
           value: String(loc.id),

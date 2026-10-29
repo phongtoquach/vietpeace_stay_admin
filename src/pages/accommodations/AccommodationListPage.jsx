@@ -306,9 +306,9 @@ export default function AccommodationListPage() {
             }}
           >
             <option value="">Tất cả điểm đến</option>
-            {locations.filter((l) => l.type !== 'Country').map((loc) => (
+            {locations.map((loc) => (
               <option key={loc.id} value={loc.id}>
-                {loc.type === 'Tourism Area' ? `★ ${loc.name}` : loc.name}
+                {loc.name}
               </option>
             ))}
           </select>

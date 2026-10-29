@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import { useAuth } from './AuthContext';
 import {
   INITIAL_USER,
   INITIAL_LOCATIONS,
@@ -19,6 +20,8 @@ import {
 
 const AdminContext = createContext(null);
 
+const API_BASE_URL = "http://localhost:3002/api/admin";
+
 export function AdminProvider({ children }) {
   // Authentication state
   const [currentUser, setCurrentUser] = useState(INITIAL_USER);
@@ -38,6 +41,41 @@ export function AdminProvider({ children }) {
   const [customers, setCustomers] = useState(INITIAL_CUSTOMERS);
   const [adminUsers, setAdminUsers] = useState(INITIAL_ADMIN_USERS);
   const [roles, setRoles] = useState(INITIAL_ROLES);
+
+  // Tải danh sách điểm đến từ Backend
+  const fetchLocations = async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/locations`, { credentials: "include" });
+      const result = await res.json();
+      if (result.success) {
+        setLocations(result.data.locationsList);
+      }
+    } catch (error) {
+      console.error("Lỗi tải điểm đến:", error);
+    }
+  };
+
+  // Tải danh sách điểm tham quan từ Backend
+  const fetchAttractions = async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/attractions`, { credentials: "include" });
+      const result = await res.json();
+      if (result.success) {
+        setAttractions(result.data.attractionsList);
+      }
+    } catch (error) {
+      console.error("Lỗi tải điểm tham quan:", error);
+    }
+  };
+
+  const auth = useAuth();
+  const currentLoggedInUser = auth ? auth.currentLoggedInUser : null;
+
+  useEffect(() => {
+    fetchLocations();
+    fetchAttractions();
+  }, [currentLoggedInUser]);
+
 
   // System settings
   const [generalSettings, setGeneralSettings] = useState({
@@ -87,35 +125,68 @@ export function AdminProvider({ children }) {
   };
 
   // Location CRUD
-  const addLocation = (locData) => {
-    const newId = Math.max(...locations.map((l) => l.id), 0) + 1;
-    const newLocation = { ...locData, id: newId };
-    setLocations((prev) => [...prev, newLocation]);
-    showToast(`Thêm điểm đến "${newLocation.name}" thành công.`);
-    return newLocation;
+  const addLocation = async (locData) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/locations`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(locData)
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast(`Thêm điểm đến "${data.data.newLocation.name}" thành công.`);
+        await fetchLocations();
+        return data.data.newLocation;
+      } else {
+        showToast(data.message, "error");
+        return null;
+      }
+    } catch (err) {
+      showToast("Lỗi kết nối khi thêm điểm đến.", "error");
+    }
   };
 
-  const updateLocation = (id, locData) => {
-    setLocations((prev) => prev.map((l) => (l.id === Number(id) ? { ...l, ...locData } : l)));
-    showToast(`Cập nhật điểm đến thành công.`);
+  const updateLocation = async (id, locData) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/locations/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(locData)
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast("Cập nhật điểm đến thành công.");
+        await fetchLocations();
+        return true;
+      } else {
+        showToast(data.message, "error");
+        return false;
+      }
+    } catch (err) {
+      showToast("Lỗi kết nối khi cập nhật điểm đến.", "error");
+    }
   };
 
-  const deleteLocation = (id) => {
-    // Check if location has child locations
-    const hasChildren = locations.some((l) => l.parent_location_id === Number(id));
-    if (hasChildren) {
-      showToast('Không thể xóa điểm đến có điểm đến con trực thuộc. Vui lòng gán lại trước.', 'warning');
-      return false;
+  const deleteLocation = async (id) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/locations/${id}`, {
+        method: "DELETE",
+        credentials: "include"
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast("Xóa điểm đến thành công.", "info");
+        await fetchLocations();
+        return true;
+      } else {
+        showToast(data.message, "warning");
+        return false;
+      }
+    } catch (err) {
+      showToast("Lỗi kết nối khi xóa điểm đến.", "error");
     }
-    // Check if accommodations reference this location
-    const hasAccommodations = accommodations.some((a) => a.location_id === Number(id));
-    if (hasAccommodations) {
-      showToast('Không thể xóa điểm đến đang liên kết với cơ sở lưu trú.', 'warning');
-      return false;
-    }
-    setLocations((prev) => prev.filter((l) => l.id !== Number(id)));
-    showToast('Xóa điểm đến thành công.', 'info');
-    return true;
   };
 
   // Accommodation CRUD
@@ -234,85 +305,89 @@ export function AdminProvider({ children }) {
   };
 
   // Attraction CRUD
-  const addAttraction = (data) => {
-    const newId = Math.max(...attractions.map((a) => a.id), 0) + 1;
-    const nowTimestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
-    const newAttraction = {
-      id: newId,
-      location_id: Number(data.location_id),
-      name: data.name?.trim() || '',
-      address: data.address?.trim() || '',
-      description: data.description?.trim() || '',
-      image: data.image || '',
-      is_active: data.is_active !== undefined ? Boolean(data.is_active) : true,
-      created_at: nowTimestamp,
-      updated_at: nowTimestamp
-    };
-    setAttractions((prev) => [...prev, newAttraction]);
-    showToast(`Thêm điểm tham quan "${newAttraction.name}" thành công.`);
-    return newAttraction;
-  };
-
-  const updateAttraction = (id, data) => {
-    const nowTimestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
-    setAttractions((prev) =>
-      prev.map((a) =>
-        a.id === Number(id)
-          ? {
-              ...a,
-              location_id: data.location_id ? Number(data.location_id) : a.location_id,
-              name: data.name !== undefined ? data.name.trim() : a.name,
-              address: data.address !== undefined ? data.address.trim() : a.address,
-              description: data.description !== undefined ? data.description.trim() : a.description,
-              image: data.image !== undefined ? data.image : a.image,
-              is_active: data.is_active !== undefined ? Boolean(data.is_active) : a.is_active,
-              updated_at: nowTimestamp
-            }
-          : a
-      )
-    );
-    showToast('Cập nhật điểm tham quan thành công.');
-    return true;
-  };
-
-  const toggleAttractionStatus = (id) => {
-    const target = attractions.find((a) => a.id === Number(id));
-    if (!target) return false;
-    const nextStatus = !target.is_active;
-    const nowTimestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
-    setAttractions((prev) =>
-      prev.map((a) =>
-        a.id === Number(id)
-          ? { ...a, is_active: nextStatus, updated_at: nowTimestamp }
-          : a
-      )
-    );
-    showToast(`Đã ${nextStatus ? 'kích hoạt' : 'ngừng hoạt động'} điểm tham quan "${target.name}".`);
-    return true;
-  };
-
-  const deleteAttraction = (id) => {
-    // Check if attraction is linked to any accommodations
-    const linkedAccommodations = accommodations.filter((acc) =>
-      (acc.attractions || []).some((att) => Number(att.attraction_id) === Number(id))
-    );
-    if (linkedAccommodations.length > 0) {
-      const accNames = linkedAccommodations.map((a) => a.name).join(', ');
-      showToast(
-        `Không thể xóa: Điểm tham quan đang được liên kết với ${linkedAccommodations.length} cơ sở lưu trú (${accNames}). Vui lòng chọn "Ngừng hoạt động" thay vì xóa.`,
-        'warning'
-      );
-      return {
-        success: false,
-        reason: 'linked',
-        linkedCount: linkedAccommodations.length,
-        linkedNames: linkedAccommodations.map((a) => a.name)
-      };
+  const addAttraction = async (data) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/attractions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(data)
+      });
+      const resData = await res.json();
+      if (resData.success) {
+        showToast(`Thêm điểm tham quan "${resData.data.newAttraction.name}" thành công.`);
+        await fetchAttractions();
+        return resData.data.newAttraction;
+      } else {
+        showToast(resData.message, "error");
+        return null;
+      }
+    } catch (err) {
+      showToast("Lỗi kết nối khi thêm điểm tham quan.", "error");
     }
+  };
 
-    setAttractions((prev) => prev.filter((a) => a.id !== Number(id)));
-    showToast('Đã xóa điểm tham quan.', 'info');
-    return { success: true };
+  const updateAttraction = async (id, data) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/attractions/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(data)
+      });
+      const resData = await res.json();
+      if (resData.success) {
+        showToast("Cập nhật điểm tham quan thành công.");
+        await fetchAttractions();
+        return true;
+      } else {
+        showToast(resData.message, "error");
+        return false;
+      }
+    } catch (err) {
+      showToast("Lỗi kết nối khi cập nhật điểm tham quan.", "error");
+    }
+  };
+
+  const toggleAttractionStatus = async (id) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/attractions/${id}/status`, {
+        method: "PATCH",
+        credentials: "include"
+      });
+      const resData = await res.json();
+      if (resData.success) {
+        showToast(resData.message, "info");
+        await fetchAttractions();
+        return true;
+      } else {
+        showToast(resData.message, "error");
+        return false;
+      }
+    } catch (err) {
+      showToast("Lỗi kết nối khi đổi trạng thái.", "error");
+    }
+  };
+
+  const deleteAttraction = async (id) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/attractions/${id}`, {
+        method: "DELETE",
+        credentials: "include"
+      });
+      const resData = await res.json();
+      if (resData.success) {
+        showToast("Xóa điểm tham quan thành công.", "info");
+        await fetchAttractions();
+        return { success: true };
+      } else {
+        showToast(resData.message, "warning");
+        return { success: false, reason: "linked" };
+      }
+    } catch (err) {
+      showToast("Lỗi kết nối khi xóa điểm tham quan.", "error");
+      return { success: false };
+    }
   };
 
   // Bookings CRUD
@@ -688,6 +763,8 @@ export function AdminProvider({ children }) {
         addLocation,
         updateLocation,
         deleteLocation,
+    fetchLocations,
+    fetchAttractions,
         accommodations,
         addAccommodation,
         updateAccommodation,
