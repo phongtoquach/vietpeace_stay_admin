@@ -1,6 +1,7 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAdmin } from '../../context/AdminContext.jsx';
+import { lookupsApi } from '../../api/lookups.js';
 import PageHeader from '../../components/common/PageHeader.jsx';
 import DataTable from '../../components/common/DataTable.jsx';
 import Pagination from '../../components/common/Pagination.jsx';
@@ -8,10 +9,25 @@ import StatusBadge from '../../components/common/StatusBadge.jsx';
 import ConfirmDialog from '../../components/common/ConfirmDialog.jsx';
 import { Plus, Eye, Edit2, Trash2, Search, RotateCcw, Star } from 'lucide-react';
 
+// Whitelist các cột thực sự bấm sort được trên UI (khớp `accessor` của columns).
+// Dùng để chặn URL rác kiểu ?sortBy=abc — URL do người dùng sửa tay được, không tin.
+const SORTABLE_FIELDS = [
+  'id',
+  'cover_image',
+  'name',
+  'type',
+  'location_id',
+  'room_types_count',
+  'star_rating',
+  'status'
+];
+
+// Khớp `pageSizeOptions` mặc định của Pagination để URL không khôi phục cỡ trang lạ.
+const ALLOWED_PAGE_SIZES = [5, 10, 20, 50];
+
 export default function AccommodationListPage() {
   const {
     accommodations,
-    locations,
     deleteAccommodation,
     fetchAccommodations,
     accommodationsLoading,
@@ -24,23 +40,88 @@ export default function AccommodationListPage() {
   const [searchParams, setSearchParams] = useSearchParams();
 
   // Filters state
-  const [searchTerm, setSearchTerm] = useState(searchParams.get('search') || '');
-  // Chỉ dùng từ khóa này để gọi API sau khi người dùng ngừng gõ 300ms.
-  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState(searchParams.get('search') || '');
-  const [typeFilter, setTypeFilter] = useState('');
-  const [locationFilter, setLocationFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
-  const [featuredFilter, setFeaturedFilter] = useState('');
+  // Mỗi useState nhận MỘT HÀM khởi tạo: hàm chỉ chạy ở lần render đầu tiên.
+  // Nhờ vậy khi F5, state được dựng lại từ query string thay vì giá trị mặc định.
+  const [searchTerm, setSearchTerm] = useState(() => searchParams.get('search') || '');
+  // Từ khóa "chờ" (dùng để gọi API) cũng khôi phục từ URL,
+  // để lần fetch đầu tiên sau F5 dùng đúng từ khóa cũ.
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState(
+    () => searchParams.get('search') || ''
+  );
+  const [typeFilter, setTypeFilter] = useState(() => searchParams.get('typeId') || '');
+  const [locationFilter, setLocationFilter] = useState(
+    () => searchParams.get('locationId') || ''
+  );
+  const [statusFilter, setStatusFilter] = useState(() => searchParams.get('status') || '');
+  const [featuredFilter, setFeaturedFilter] = useState(
+    () => searchParams.get('isFeatured') || ''
+  );
 
   // Table state
-  const [sortField, setSortField] = useState('id');
-  const [sortDirection, setSortDirection] = useState('asc');
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
+  const [sortField, setSortField] = useState(() => {
+    const value = searchParams.get('sortBy');
+    return SORTABLE_FIELDS.includes(value) ? value : 'id';
+  });
+  const [sortDirection, setSortDirection] = useState(() =>
+    searchParams.get('sortDir') === 'desc' ? 'desc' : 'asc'
+  );
+  // parseInt('abc') trả NaN → Number.isInteger(NaN) = false → rơi về mặc định.
+  const [currentPage, setCurrentPage] = useState(() => {
+    const page = Number.parseInt(searchParams.get('page'), 10);
+    return Number.isInteger(page) && page >= 1 ? page : 1;
+  });
+  // limit lạ (ví dụ ?limit=9999) bị kẹp về 10 để khớp dropdown của Pagination.
+  const [pageSize, setPageSize] = useState(() => {
+    const size = Number.parseInt(searchParams.get('limit'), 10);
+    return ALLOWED_PAGE_SIZES.includes(size) ? size : 10;
+  });
   const [selectedIds, setSelectedIds] = useState([]);
+
+  // Danh sách điểm đến cho dropdown, lấy từ bảng dbo.locations thật.
+  // Không dùng `locations` của context vì đó vẫn là dữ liệu mock,
+  // id mock không khớp id thật nên filter sẽ gửi sai locationId.
+  const [locations, setLocations] = useState([]);
+
+  // Context vẫn khởi tạo `accommodations` bằng mock (các trang khác còn dùng),
+  // nên lần render đầu tiên bảng sẽ lóe dữ liệu mock trước khi request thật chạy.
+  // Cờ này giữ skeleton cho tới khi request đầu tiên kết thúc, list không bao giờ
+  // hiển thị dữ liệu giả; nếu request lỗi thì thôi chặn để hiện bảng rỗng + lỗi.
+  const [firstLoadSettled, setFirstLoadSettled] = useState(false);
 
   // Confirm delete dialog
   const [deleteTargetId, setDeleteTargetId] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadLocations() {
+      console.group('[AccommodationListPage] Tải điểm đến cho filter');
+      console.log('[1] Bắt đầu gọi /lookup/locations');
+      try {
+        const items = await lookupsApi.getLocations();
+        if (cancelled) {
+          console.warn('[2] Component đã unmount, bỏ qua kết quả.');
+          return;
+        }
+        setLocations(items);
+        console.log('[3] Đã set state locations:', items.length);
+      } catch (error) {
+        if (!cancelled) {
+          console.error('[ERROR] Không tải được điểm đến:', error);
+        }
+      } finally {
+        if (!cancelled) {
+          console.log('[4] Kết thúc tải điểm đến.');
+        }
+        console.groupEnd();
+      }
+    }
+
+    loadLocations();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     // Hủy timer cũ nếu người dùng tiếp tục gõ trước 300ms.
@@ -56,6 +137,78 @@ export default function AccommodationListPage() {
       window.clearTimeout(timerId);
     };
   }, [searchTerm]);
+
+  // Log MỘT lần khi mount để đối chiếu: F5 xong, các giá trị dưới đây
+  // phải giống hệt trước khi reload — nếu khác, lỗi nằm ở bước đọc URL.
+  useEffect(() => {
+    console.group('[AccommodationListPage] [URL] Khôi phục bộ lọc khi mount/F5');
+    console.log('[1] Query string hiện tại:', searchParams.toString() || '(rỗng)');
+    console.log('[2] State sau khi khôi phục:', {
+      search: debouncedSearchTerm,
+      typeId: typeFilter,
+      locationId: locationFilter,
+      status: statusFilter,
+      isFeatured: featuredFilter,
+      sortBy: sortField,
+      sortDir: sortDirection,
+      page: currentPage,
+      limit: pageSize
+    });
+    console.groupEnd();
+    // Chỉ chạy ở lần mount đầu; các lần đổi URL sau do effect đồng bộ bên dưới xử lý.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Đồng bộ state -> URL. Nhờ effect này, F5 luôn dựng lại được màn hình.
+  // Ghi bằng debouncedSearchTerm (không phải searchTerm) để không ghi URL mỗi phím gõ.
+  useEffect(() => {
+    // Chỉ đưa lên URL các giá trị KHÁC mặc định → URL ngắn, dễ đọc.
+    const nextParams = {};
+    if (debouncedSearchTerm) nextParams.search = debouncedSearchTerm;
+    if (typeFilter) nextParams.typeId = typeFilter;
+    if (locationFilter) nextParams.locationId = locationFilter;
+    if (statusFilter) nextParams.status = statusFilter;
+    if (featuredFilter) nextParams.isFeatured = featuredFilter;
+    if (sortField !== 'id') nextParams.sortBy = sortField;
+    if (sortDirection !== 'asc') nextParams.sortDir = sortDirection;
+    if (currentPage > 1) nextParams.page = String(currentPage);
+    if (pageSize !== 10) nextParams.limit = String(pageSize);
+
+    // Thứ tự key cố định vì object dựng theo cùng một thứ tự mỗi lần,
+    // nên so sánh chuỗi là đủ để biết URL có thay đổi thật hay không.
+    const nextQuery = new URLSearchParams(nextParams).toString();
+    const currentQuery = searchParams.toString();
+
+    console.log('[AccommodationListPage] [URL] So sánh query:', {
+      nextQuery: nextQuery || '(rỗng)',
+      currentQuery: currentQuery || '(rỗng)'
+    });
+
+    // Chốt chặn vòng lặp: setSearchParams làm searchParams đổi -> effect chạy lại.
+    // Lần chạy thứ hai thấy chuỗi giống hệt thì dừng, không ghi nữa.
+    if (nextQuery === currentQuery) {
+      console.log('[AccommodationListPage] [URL] Không đổi → bỏ qua ghi URL');
+      return;
+    }
+
+    console.log('[AccommodationListPage] [URL] Ghi URL (replace: true):', nextParams);
+
+    // replace: true -> thay entry hiện tại thay vì đẩy thêm entry mới.
+    // Mục đích: bấm Back không phải "lùi từng lần lọc", mà về trang trước đó.
+    setSearchParams(nextParams, { replace: true });
+  }, [
+    debouncedSearchTerm,
+    typeFilter,
+    locationFilter,
+    statusFilter,
+    featuredFilter,
+    sortField,
+    sortDirection,
+    currentPage,
+    pageSize,
+    searchParams,
+    setSearchParams
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -75,7 +228,7 @@ export default function AccommodationListPage() {
       console.group(
         `[AccommodationListPage] Tải trang ${currentPage}`
       );
-      console.log('[AccommodationListPage] Params filter gửi lên API:', {
+      console.log('[1] Params filter gửi lên API:', {
         search: debouncedSearchTerm,
         typeId: typeFilter,
         locationId: locationFilter,
@@ -120,6 +273,8 @@ export default function AccommodationListPage() {
             '[5] Hoàn tất request trang:',
             currentPage
           );
+          // Đánh dấu đã có kết quả thật (kể cả lỗi) để bỏ chặn skeleton.
+          setFirstLoadSettled(true);
         }
         console.groupEnd();
       }
@@ -141,21 +296,20 @@ export default function AccommodationListPage() {
     pageSize
   ]);
 
-  // Map location names for display
-  const locationMap = useMemo(() => {
-    const map = {};
-    locations.forEach((loc) => {
-      let fullName = loc.name;
-      if (loc.parent_location_id) {
-        const parent = locations.find((l) => l.id === loc.parent_location_id);
-        if (parent) {
-          fullName = `${parent.name} - ${loc.name}`;
-        }
-      }
-      map[loc.id] = fullName;
-    });
-    return map;
-  }, [locations]);
+  // Theo dõi luồng loading: context bật/tắt cờ này trong fetchAccommodations,
+  // trang chỉ đọc lại và chuyển tiếp xuống DataTable.
+  useEffect(() => {
+    console.log(
+      '[AccommodationListPage] accommodationsLoading đổi thành:',
+      accommodationsLoading
+    );
+    return () => {
+      console.log(
+        '[AccommodationListPage] cleanup effect loading, giá trị cũ:',
+        accommodationsLoading
+      );
+    };
+  }, [accommodationsLoading]);
 
   // Backend đã filter, sort và paginate toàn bộ dữ liệu.
   // Frontend chỉ render trang hiện tại, không lọc lại lần thứ hai.
@@ -281,7 +435,9 @@ export default function AccommodationListPage() {
       header: 'Điểm đến',
       accessor: 'location_id',
       sortable: true,
-      render: (row) => <span>{locationMap[row.location_id] || 'Việt Nam'}</span>
+      // DTO list trả location: { id, name }; adapter giữ nguyên object này.
+      // Đọc thẳng tên từ API, không tra map mock nên không còn rơi về "Việt Nam".
+      render: (row) => <span>{row.location?.name || '—'}</span>
     },
     {
       header: 'Loại phòng',
@@ -300,14 +456,27 @@ export default function AccommodationListPage() {
       accessor: 'star_rating',
       sortable: true,
       width: '100px',
-      render: (row) => (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '3px', color: '#F4C542' }}>
-          <Star size={13} fill="#F4C542" />
-          <span style={{ fontSize: '12px', fontWeight: 600, color: '#292D32' }}>
-            {row.star_rating}.0
-          </span>
-        </div>
-      )
+      render: (row) => {
+        // star_rating NULL = chưa xếp hạng, không phải 0 sao.
+        // Nếu không tách nhánh, chuỗi `${null}.0` sẽ render thành ".0".
+        if (row.star_rating === null || row.star_rating === undefined) {
+          // Chỉ log dòng thật sự thiếu hạng sao, tránh spam 10 dòng mỗi lần render.
+          console.log(
+            '[AccommodationListPage] Cơ sở chưa có hạng sao:',
+            { id: row.id, name: row.name }
+          );
+          return <span style={{ color: '#6B7280' }}>—</span>;
+        }
+
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '3px', color: '#F4C542' }}>
+            <Star size={13} fill="#F4C542" />
+            <span style={{ fontSize: '12px', fontWeight: 600, color: '#292D32' }}>
+              {row.star_rating}.0
+            </span>
+          </div>
+        );
+      }
     },
     {
       header: 'Trạng thái',
@@ -423,9 +592,11 @@ export default function AccommodationListPage() {
             }}
           >
             <option value="">Tất cả điểm đến</option>
-            {locations.filter((l) => l.type !== 'Country').map((loc) => (
+            {locations.map((loc) => (
+              // Hiển thị đúng name trong DB; bảng locations không có cột type
+              // nên bỏ các nhãn ★ / lọc Country của dữ liệu mock cũ.
               <option key={loc.id} value={loc.id}>
-                {loc.type === 'Tourism Area' ? `★ ${loc.name}` : loc.name}
+                {loc.name}
               </option>
             ))}
           </select>
@@ -482,35 +653,28 @@ export default function AccommodationListPage() {
         </div>
       </div>
 
-      {accommodationsLoading && (
-        <div className="empty-state">
-          Đang tải danh sách cơ sở lưu trú...
-        </div>
-      )}
-
-      {accommodationsLoading ? (
-        <div className="empty-state">
-          Đang tải danh sách cơ sở lưu trú...
-        </div>
-      ) : (
-        <DataTable
-          columns={columns}
-          data={paginatedData}
-          sortField={sortField}
-          sortDirection={sortDirection}
-          onSort={handleSort}
-          selectedRows={selectedIds}
-          onSelectRow={handleSelectRow}
-          onSelectAll={handleSelectAll}
-          emptyMessage="Không tìm thấy cơ sở lưu trú nào."
-        />
-      )}
+      {/* Chỉ còn MỘT quyết định render: DataTable tự vẽ skeleton khi loading,
+          nên không còn hai chữ "Đang tải" chồng nhau và header bảng không mất. */}
+      <DataTable
+        columns={columns}
+        data={paginatedData}
+        loading={accommodationsLoading || (!firstLoadSettled && !accommodationsError)}
+        skeletonRows={pageSize}
+        sortField={sortField}
+        sortDirection={sortDirection}
+        onSort={handleSort}
+        selectedRows={selectedIds}
+        onSelectRow={handleSelectRow}
+        onSelectAll={handleSelectAll}
+        emptyMessage="Không tìm thấy cơ sở lưu trú nào."
+      />
 
       {/* Pagination */}
       <Pagination
         currentPage={currentPage}
         pageSize={pageSize}
         totalItems={totalItems}
+        pageSizeOptions={ALLOWED_PAGE_SIZES}
         onPageChange={(page) => {
           console.log(
             '[Pagination] Người dùng chọn trang:',

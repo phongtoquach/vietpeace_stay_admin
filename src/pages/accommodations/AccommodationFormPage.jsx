@@ -6,7 +6,7 @@ import FormInput from '../../components/forms/FormInput.jsx';
 import FormSelect from '../../components/forms/FormSelect.jsx';
 import FormTextarea from '../../components/forms/FormTextarea.jsx';
 import ImageUpload from '../../components/forms/ImageUpload.jsx';
-import { WARDS_BY_PROVINCE } from '../../data/mockData.js';
+import { lookupsApi } from '../../api/lookups.js';
 import {
   ArrowLeft,
   Save,
@@ -26,42 +26,20 @@ import {
 } from 'lucide-react';
 import resortDanangImg from '../../assets/images/resort_danang_1790825961463.jpg';
 
-// Helper to resolve province for any location in hierarchy
-export const getProvinceForLocation = (locationId, locations = []) => {
-  if (!locationId || !locations || !locations.length) return null;
-  let loc = locations.find((l) => Number(l.id) === Number(locationId));
-  if (!loc) return null;
-
-  let depth = 0;
-  while (loc && depth < 10) {
-    depth++;
-    if (loc.type === 'Province / City') {
-      return loc;
-    }
-    if (!loc.parent_location_id) {
-      return loc;
-    }
-    const parent = locations.find((l) => Number(l.id) === Number(loc.parent_location_id));
-    if (!parent || parent.type === 'Region') {
-      return loc;
-    }
-    loc = parent;
-  }
-  return null;
+// API /lookup/locations đã trả sẵn provinceId + provinceName cho từng điểm đến,
+// nên chỉ cần tra trực tiếp thay vì dò cây cha–con như dữ liệu mock trước đây.
+const getProvinceOfLocation = (locationId, locations = []) => {
+  if (!locationId || !locations.length) return null;
+  const loc = locations.find((l) => Number(l.id) === Number(locationId));
+  if (!loc || !loc.provinceId) return null;
+  return { id: Number(loc.provinceId), name: loc.provinceName };
 };
 
 export default function AccommodationFormPage() {
   const { id } = useParams();
   const isEdit = Boolean(id);
   const navigate = useNavigate();
-  const {
-    accommodations,
-    locations,
-    amenities,
-    attractions,
-    addAccommodation,
-    updateAccommodation
-  } = useAdmin();
+  const { accommodations, addAccommodation, updateAccommodation } = useAdmin();
 
   // Active form section tab (4 tabs total, NO separate attraction tab)
   const [activeTab, setActiveTab] = useState('general');
@@ -74,6 +52,7 @@ export default function AccommodationFormPage() {
     short_description: '',
     full_description: '',
     address: '',
+    ward_id: '',
     ward: '',
     location_id: '',
     latitude: '',
@@ -94,6 +73,14 @@ export default function AccommodationFormPage() {
 
   const [errors, setErrors] = useState({});
 
+  // Dữ liệu danh mục lấy từ backend (thay cho mock trước đây).
+  const [lookupLocations, setLookupLocations] = useState([]);
+  const [lookupWards, setLookupWards] = useState([]);
+  const [lookupAmenities, setLookupAmenities] = useState([]);
+  const [lookupAttractions, setLookupAttractions] = useState([]);
+  const [lookupError, setLookupError] = useState(null);
+  const [isLoadingLookups, setIsLoadingLookups] = useState(false);
+
   // Populate data when in edit mode without triggering user location change wiping
   useEffect(() => {
     if (isEdit) {
@@ -101,7 +88,8 @@ export default function AccommodationFormPage() {
       if (existing) {
         setFormData({
           ...existing,
-          ward: existing.ward || '',
+          ward_id: existing.ward_id ?? existing.ward?.id ?? '',
+          ward: typeof existing.ward === 'string' ? existing.ward : existing.ward?.name || '',
           cover_image: existing.cover_image || resortDanangImg,
           gallery_images: existing.gallery_images || [existing.cover_image || resortDanangImg],
           amenity_ids: existing.amenity_ids || [],
@@ -111,63 +99,165 @@ export default function AccommodationFormPage() {
     }
   }, [id, isEdit, accommodations]);
 
-  // Hierarchical and contextual location options for "Điểm đến" dropdown
-  const locationSelectOptions = useMemo(() => {
-    return locations
-      .filter((loc) => loc.type !== 'Region')
-      .map((loc) => {
-        const prov = getProvinceForLocation(loc.id, locations);
-        let label = loc.name;
-        if (prov && prov.id !== loc.id) {
-          label = `${loc.name} (${prov.name} - ${loc.type})`;
-        } else {
-          label = `${loc.name} (${loc.type})`;
+  // Điểm đến + tiện nghi: chỉ cần nạp một lần khi mở form.
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadStaticLookups() {
+      console.group('[AccommodationFormPage] Nạp lookup tĩnh');
+      console.log('[1] Bắt đầu gọi /lookup/locations và /lookup/amenities');
+      setIsLoadingLookups(true);
+      setLookupError(null);
+
+      try {
+        const [locationItems, amenityItems] = await Promise.all([
+          lookupsApi.getLocations(),
+          lookupsApi.getAmenities('accommodation')
+        ]);
+
+        if (cancelled) {
+          console.warn('[2] Component đã unmount, bỏ qua kết quả.');
+          return;
         }
-        return {
-          value: String(loc.id),
-          label: label
-        };
-      })
+
+        setLookupLocations(locationItems);
+        setLookupAmenities(
+          amenityItems.map((item) => ({
+            id: item.id,
+            name: item.name,
+            category: item.categoryName || 'Khác'
+          }))
+        );
+        console.log('[3] Đã nạp:', {
+          locations: locationItems.length,
+          amenities: amenityItems.length
+        });
+      } catch (error) {
+        if (!cancelled) {
+          console.error('[ERROR] Không nạp được lookup tĩnh:', error);
+          setLookupError(error.message || 'Không tải được danh mục điểm đến / tiện nghi.');
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingLookups(false);
+          console.log('[4] Kết thúc nạp lookup tĩnh.');
+        }
+        console.groupEnd();
+      }
+    }
+
+    loadStaticLookups();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Điểm đến hợp lệ → suy ra tỉnh/thành (API đã trả sẵn provinceId + provinceName).
+  const currentProvince = useMemo(
+    () => getProvinceOfLocation(formData.location_id, lookupLocations),
+    [formData.location_id, lookupLocations]
+  );
+
+  // Đổi điểm đến → nạp lại phường/xã theo tỉnh và điểm tham quan theo điểm đến.
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadLocationLookups() {
+      const locationId = formData.location_id;
+      const provinceId = currentProvince ? currentProvince.id : null;
+
+      console.group('[AccommodationFormPage] Nạp lookup theo điểm đến');
+      console.log('[1] locationId:', locationId, '| provinceId:', provinceId);
+
+      if (!locationId) {
+        console.log('[2] Chưa chọn điểm đến → xoá danh sách phụ thuộc.');
+        setLookupWards([]);
+        setLookupAttractions([]);
+        console.groupEnd();
+        return;
+      }
+
+      try {
+        const [wardItems, attractionItems] = await Promise.all([
+          lookupsApi.getWards(provinceId),
+          lookupsApi.getAttractions(Number(locationId), true)
+        ]);
+
+        if (cancelled) {
+          console.warn('[3] Component đã unmount, bỏ qua kết quả.');
+          return;
+        }
+
+        setLookupWards(wardItems);
+        setLookupAttractions(
+          attractionItems.map((item) => ({
+            id: item.id,
+            name: item.name,
+            address: item.addressLine,
+            image: item.imageUrl,
+            is_active: Boolean(item.isActive)
+          }))
+        );
+        setLookupError(null);
+        console.log('[4] Đã nạp:', {
+          wards: wardItems.length,
+          attractions: attractionItems.length
+        });
+      } catch (error) {
+        if (!cancelled) {
+          console.error('[ERROR] Không nạp được lookup theo điểm đến:', error);
+          setLookupWards([]);
+          setLookupAttractions([]);
+          setLookupError(error.message || 'Không tải được phường/xã hoặc điểm tham quan.');
+        }
+      } finally {
+        if (!cancelled) {
+          console.log('[5] Kết thúc nạp lookup theo điểm đến.');
+        }
+        console.groupEnd();
+      }
+    }
+
+    loadLocationLookups();
+    return () => {
+      cancelled = true;
+    };
+  }, [formData.location_id, currentProvince]);
+
+  // "Điểm đến" dropdown: nhãn kèm tỉnh/thành để người dùng phân biệt.
+  const locationSelectOptions = useMemo(() => {
+    return lookupLocations
+      .map((loc) => ({
+        value: String(loc.id),
+        label: loc.provinceName ? `${loc.name} (${loc.provinceName})` : loc.name
+      }))
       .sort((a, b) => a.label.localeCompare(b.label, 'vi'));
-  }, [locations]);
+  }, [lookupLocations]);
 
-  // Determine Province for current selected location
-  const currentProvince = useMemo(() => {
-    return getProvinceForLocation(formData.location_id, locations);
-  }, [formData.location_id, locations]);
+  // Phường/xã thuộc tỉnh/thành của điểm đến đang chọn.
+  const availableWards = lookupWards;
 
-  // Wards belonging to current province
-  const availableWards = useMemo(() => {
-    if (!currentProvince) return [];
-    return WARDS_BY_PROVINCE[currentProvince.id] || [];
-  }, [currentProvince]);
-
-  // Attractions assigned to selected location
+  // Điểm tham quan thuộc điểm đến đang chọn.
+  // BE đã lọc theo locationId; ở đây chỉ giấu điểm ngừng hoạt động nếu chưa liên kết.
   const locationAttractions = useMemo(() => {
-    if (!formData.location_id) return [];
-    const locId = Number(formData.location_id);
-
-    return attractions.filter((att) => {
-      const matchesLoc = Number(att.location_id) === locId;
-      if (!matchesLoc) return false;
+    return lookupAttractions.filter((att) => {
       const isAlreadyLinked = (formData.attractions || []).some(
         (a) => Number(a.attraction_id) === Number(att.id)
       );
-      // Offer active attractions for new selections. Keep inactive attractions visible only if already linked.
       return att.is_active || isAlreadyLinked;
     });
-  }, [formData.location_id, attractions, formData.attractions]);
+  }, [lookupAttractions, formData.attractions]);
 
   // Group amenities by category
   const amenitiesByCategory = useMemo(() => {
     const grouped = {};
-    amenities.forEach((item) => {
+    lookupAmenities.forEach((item) => {
       const cat = item.category || 'Khác';
       if (!grouped[cat]) grouped[cat] = [];
       grouped[cat].push(item);
     });
     return grouped;
-  }, [amenities]);
+  }, [lookupAmenities]);
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -197,19 +287,17 @@ export default function AccommodationFormPage() {
       }
     }
 
-    // Determine if province changed
-    const oldProv = getProvinceForLocation(formData.location_id, locations);
-    const newProv = getProvinceForLocation(newLocationId, locations);
-
-    // Check if current ward belongs to new province
-    const newWards = newProv ? (WARDS_BY_PROVINCE[newProv.id] || []) : [];
-    const isWardInNewProvince = newWards.some((w) => w.name === formData.ward);
+    // So sánh tỉnh/thành của điểm đến cũ và mới.
+    const oldProv = getProvinceOfLocation(formData.location_id, lookupLocations);
+    const newProv = getProvinceOfLocation(newLocationId, lookupLocations);
+    const isSameProvince = Boolean(oldProv && newProv && oldProv.id === newProv.id);
 
     setFormData((prev) => ({
       ...prev,
       location_id: newLocationId,
-      // Clear ward if it does not belong to new province
-      ward: isWardInNewProvince ? prev.ward : '',
+      // Đổi tỉnh/thành thì phường/xã cũ không còn hợp lệ → xoá.
+      ward_id: isSameProvince ? prev.ward_id : '',
+      ward: isSameProvince ? prev.ward : '',
       // Clear attractions belonging to previous location
       attractions: []
     }));
@@ -217,6 +305,18 @@ export default function AccommodationFormPage() {
     if (errors.location_id) {
       setErrors((prev) => ({ ...prev, location_id: null }));
     }
+  };
+
+  // Phường/xã lưu cả id (BE cần wardId) và tên (để hiển thị).
+  const handleWardChange = (e) => {
+    const wardId = e.target.value;
+    const selected = availableWards.find((w) => String(w.id) === wardId);
+
+    setFormData((prev) => ({
+      ...prev,
+      ward_id: wardId,
+      ward: selected ? selected.name : ''
+    }));
   };
 
   // Toggle nearby attraction selection
@@ -282,30 +382,13 @@ export default function AccommodationFormPage() {
     });
   };
 
-  const validate = () => {
-    const newErrors = {};
-    if (!formData.name.trim()) newErrors.name = 'Vui lòng nhập tên cơ sở lưu trú.';
-    if (!formData.code.trim()) newErrors.code = 'Vui lòng nhập mã cơ sở lưu trú.';
-    if (!formData.location_id) newErrors.location_id = 'Vui lòng chọn điểm đến trực thuộc.';
-    if (!formData.address.trim()) newErrors.address = 'Vui lòng nhập địa chỉ cụ thể.';
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
-
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!validate()) {
-      if (!formData.name.trim() || !formData.code.trim()) {
-        setActiveTab('general');
-      } else if (!formData.location_id || !formData.address.trim()) {
-        setActiveTab('location');
-      }
-      return;
-    }
 
     const payload = {
       ...formData,
       location_id: Number(formData.location_id),
+      ward_id: formData.ward_id ? Number(formData.ward_id) : null,
       star_rating: Number(formData.star_rating),
       attractions: (formData.attractions || []).map((a) => ({
         attraction_id: Number(a.attraction_id),
@@ -567,7 +650,6 @@ export default function AccommodationFormPage() {
                       }}
                       value={formData.location_id || ''}
                       onChange={handleLocationChange}
-                      required
                     >
                       <option value="">-- Chọn điểm đến --</option>
                       {locationSelectOptions.map((opt) => (
@@ -584,6 +666,16 @@ export default function AccommodationFormPage() {
                     <span style={{ fontSize: '12px', color: '#6B7280', marginTop: '4px', display: 'block' }}>
                       Chọn điểm đến để hệ thống tự động xác định Tỉnh/thành, nạp danh sách Phường/xã và các điểm tham quan lân cận trực thuộc.
                     </span>
+                    {isLoadingLookups && (
+                      <span style={{ fontSize: '12px', color: '#2563EB', marginTop: '4px', display: 'block' }}>
+                        Đang tải danh mục điểm đến / tiện nghi từ server...
+                      </span>
+                    )}
+                    {lookupError && (
+                      <span style={{ fontSize: '12px', color: '#B91C1C', marginTop: '4px', display: 'block' }}>
+                        {lookupError}
+                      </span>
+                    )}
                   </div>
 
                   {/* 2. Read-only "Tỉnh/thành: {province name}" text */}
@@ -647,11 +739,11 @@ export default function AccommodationFormPage() {
                     </label>
                     <select
                       id="field-ward"
-                      name="ward"
+                      name="ward_id"
                       className="filter-select"
                       style={{ width: '100%', height: '40px' }}
-                      value={formData.ward || ''}
-                      onChange={handleChange}
+                      value={formData.ward_id || ''}
+                      onChange={handleWardChange}
                       disabled={!formData.location_id || availableWards.length === 0}
                     >
                       <option value="">
@@ -662,14 +754,17 @@ export default function AccommodationFormPage() {
                           : '-- Chọn phường/xã --'}
                       </option>
                       {availableWards.map((w) => (
-                        <option key={w.id} value={w.name}>
+                        <option key={w.id} value={String(w.id)}>
                           {w.name}
                         </option>
                       ))}
-                      {/* Preserve custom ward if not in pre-defined list */}
-                      {formData.ward && !availableWards.some((w) => w.name === formData.ward) && (
-                        <option value={formData.ward}>{formData.ward}</option>
-                      )}
+                      {/* Giữ lại phường/xã đã lưu nếu danh sách mới chưa tải xong */}
+                      {formData.ward_id &&
+                        !availableWards.some((w) => String(w.id) === String(formData.ward_id)) && (
+                          <option value={String(formData.ward_id)}>
+                            {formData.ward || 'Phường/xã đã chọn'}
+                          </option>
+                        )}
                     </select>
                     <span style={{ fontSize: '11.5px', color: '#6B7280', marginTop: '4px', display: 'block' }}>
                       Danh sách phường/xã phụ thuộc vào Tỉnh/thành của điểm đến đã chọn.

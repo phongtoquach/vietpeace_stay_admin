@@ -25,7 +25,6 @@ export default function AccommodationDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const {
-    locations,
     roomRates,
     ratePeriods,
     getRoomWeekdayRates,
@@ -60,10 +59,19 @@ export default function AccommodationDetailPage() {
         console.log('[2] Detail nhận từ API:', payload.data);
         setAccommodation(payload.data);
 
-        console.log('[3] Detail sẵn sàng render:', {
+        console.log(
+          '[3] Hạng sao:',
+          payload.data?.star_rating === null || payload.data?.star_rating === undefined
+            ? 'NULL — ẩn khối sao ở header'
+            : `${payload.data.star_rating} sao — hiện icon`
+        );
+
+        console.log('[4] Detail sẵn sàng render:', {
           id: payload.data?.id,
           name: payload.data?.name,
           imageCount: payload.data?.images?.length || 0,
+          status: payload.data?.status,
+          statusLabel: payload.data?.statusLabel,
         });
       } catch (error) {
         if (!cancelled) {
@@ -73,7 +81,7 @@ export default function AccommodationDetailPage() {
       } finally {
         if (!cancelled) {
           setDetailLoading(false);
-          console.log('[4] Hoàn tất tải detail.');
+          console.log('[5] Hoàn tất tải detail.');
         }
 
         console.groupEnd();
@@ -105,10 +113,14 @@ export default function AccommodationDetailPage() {
     );
   }
 
-  // Location display name
-  const loc = locations.find((l) => l.id === accommodation.location_id);
-  const parentLoc = loc?.parent_location_id ? locations.find((l) => l.id === loc.parent_location_id) : null;
-  const locationDisplay = [parentLoc?.name, loc?.name].filter(Boolean).join(' › ') || 'Việt Nam';
+  // Tên điểm đến lấy trực tiếp từ DTO detail (location: { id, name }).
+  // Trước đây tra `locations` mock bằng `accommodation.location_id` — field này
+  // không tồn tại trong adapter detail nên luôn rơi về "Việt Nam".
+  const locationDisplay = accommodation.location?.name || '—';
+
+  // DTO detail trả type dạng object { id, code, name }; nối chuỗi trực tiếp
+  // sẽ ra "[object Object]" nên đọc .name trước, fallback .code.
+  const typeLabel = accommodation.type?.name || accommodation.type?.code || '—';
 
   // Detail API đã trả đầy đủ các mảng quan hệ.
   // Không lấy từ context mock vì context chỉ chứa dữ liệu khởi tạo cũ.
@@ -116,11 +128,39 @@ export default function AccommodationDetailPage() {
   const propertyAmenities = accommodation.amenities || [];
   const propertyAttractions = accommodation.attractions || [];
 
+  // Địa chỉ đầy đủ = số nhà/đường + phường/xã + tỉnh/thành.
+  // DTO detail đã có ward.name và province.name từ backend;
+  // ward có thể null (LEFT JOIN wards) nên phải filter phần rỗng,
+  // tránh nối chuỗi thô tạo ra "undefined".
+  const fullAddress = [
+    accommodation.address,
+    accommodation.ward?.name,
+    accommodation.province?.name
+  ]
+    .filter(Boolean)
+    .join(', ');
+
+  // Chỉ vẽ sao khi có số hợp lệ 1..5. NULL/undefined = chưa xếp hạng → 0 sao,
+  // trước đây `star_rating || 5` biến NULL thành 5 sao giả trên UI.
+  const parsedStarCount = Number(accommodation.star_rating);
+  const starCount =
+    Number.isFinite(parsedStarCount) && parsedStarCount > 0
+      ? Math.min(Math.round(parsedStarCount), 5)
+      : 0;
+
   console.log('[AccommodationDetailPage] Dữ liệu thực tế dùng để render:', {
+    locationName: accommodation.location?.name || null,
     images: accommodation.images?.length || 0,
     roomTypes: propertyRoomTypes.length,
     amenities: propertyAmenities.length,
     attractions: propertyAttractions.length,
+  });
+
+  console.log('[AccommodationDetailPage] Địa chỉ đầy đủ:', {
+    addressLine: accommodation.address,
+    ward: accommodation.ward?.name || null,
+    province: accommodation.province?.name || null,
+    fullAddress
   });
 
   const handleDeleteAccommodation = () => {
@@ -137,7 +177,7 @@ export default function AccommodationDetailPage() {
       {/* Page Header */}
       <PageHeader
         title={accommodation.name}
-        description={`${accommodation.type} · Mã: ${accommodation.code} · ${locationDisplay}`}
+        description={`${typeLabel} · Mã: ${accommodation.code} · ${locationDisplay}`}
         breadcrumb={[
           { label: 'Cơ sở lưu trú', path: '/admin/accommodations' },
           { label: accommodation.name }
@@ -191,13 +231,19 @@ export default function AccommodationDetailPage() {
                   ""
                 }
               />
-              <StatusBadge status={accommodation.status} />
+              {/* accommodation.status là số 0/1/2; StatusBadge không dịch số.
+                  DTO đã có statusLabel ("Đang hoạt động"…) nên truyền nhãn chữ,
+                  vẫn fallback về số nếu statusLabel rỗng. */}
+              <StatusBadge status={accommodation.statusLabel || accommodation.status} />
               {accommodation.featured && <span className="badge badge-warning">Nổi bật</span>}
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', color: '#F4C542', marginLeft: 'auto' }}>
-                {Array.from({ length: accommodation.star_rating || 5 }).map((_, i) => (
-                  <Star key={i} size={14} fill="#F4C542" />
-                ))}
-              </div>
+              {/* starCount = 0 (NULL/không hợp lệ) thì không render khối sao nào. */}
+              {starCount > 0 && (
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', color: '#F4C542', marginLeft: 'auto' }}>
+                  {Array.from({ length: starCount }).map((_, i) => (
+                    <Star key={i} size={14} fill="#F4C542" />
+                  ))}
+                </div>
+              )}
             </div>
 
             <p style={{ fontSize: '13px', color: '#4B5563', marginBottom: '12px' }}>
@@ -218,7 +264,8 @@ export default function AccommodationDetailPage() {
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <MapPin size={14} color="#6B7280" />
-              <span style={{ color: '#292D32' }}>{accommodation.address}</span>
+              {/* Ghép đủ 3 cấp địa chỉ; nếu tất cả đều rỗng thì hiện "—" */}
+              <span style={{ color: '#292D32' }}>{fullAddress || '—'}</span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <Phone size={14} color="#6B7280" />
@@ -231,7 +278,9 @@ export default function AccommodationDetailPage() {
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <Calendar size={14} color="#6B7280" />
               <span style={{ color: '#292D32' }}>
-                Nhận phòng: {accommodation.checkin_time} / Trả phòng: {accommodation.checkout_time}
+                {/* DTO detail dùng camelCase (checkInTime/checkOutTime);
+                    bản cũ đọc snake_case của mock nên luôn hiện trống. */}
+                Nhận phòng: {accommodation.checkInTime || '—'} / Trả phòng: {accommodation.checkOutTime || '—'}
               </span>
             </div>
           </div>

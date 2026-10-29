@@ -103,18 +103,17 @@ export function AdminProvider({ children }) {
   };
 
   const fetchAccommodations = useCallback(async (params = {}) => {
-    console.log(
-      '[AdminContext - fetchAccommodations] Input params:',
-      params
-    );
+    console.group('[AdminContext - fetchAccommodations]');
+    console.log('[1] Input params từ ListPage:', params);
+
     setAccommodationsLoading(true);
     setAccommodationsError(null);
+    console.log('[2] Bật loading, xoá lỗi cũ');
+
     try {
       const payload = await accommodationsApi.getList(params);
-      console.log(
-        '[AdminContext - fetchAccommodations] API payload:',
-        payload
-      );
+      console.log('[3] API payload:', payload);
+
       setAccommodations(payload.data?.items || []);
       setAccommodationsPagination(
         payload.data?.pagination || {
@@ -124,23 +123,24 @@ export function AdminProvider({ children }) {
           totalPages: 0
         }
       );
-      console.log(
-        '[AdminContext - fetchAccommodations] Items count:',
-        payload.data?.items?.length || 0
-      );
+      console.log('[4] Đã set state:', {
+        itemsCount: payload.data?.items?.length || 0,
+        pagination: payload.data?.pagination
+      });
       return payload;
     } catch (error) {
-      console.error(
-        '[AdminContext - fetchAccommodations] Error:',
-        error
-      );
+      console.error('[ERROR] fetchAccommodations thất bại:', {
+        message: error.message,
+        status: error.status,
+        errorCode: error.errorCode,
+        fieldErrors: error.errors
+      });
       setAccommodationsError(error);
       throw error;
     } finally {
       setAccommodationsLoading(false);
-      console.log(
-        '[AdminContext - fetchAccommodations] Loading finished'
-      );
+      console.log('[5] Tắt loading');
+      console.groupEnd();
     }
   }, []);
 

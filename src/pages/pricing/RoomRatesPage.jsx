@@ -1144,7 +1144,6 @@ export default function RoomRatesPage() {
                           onChange={(e) =>
                             setWeekdayForm({ ...weekdayForm, [d.day]: e.target.value })
                           }
-                          required
                         />
                         <span
                           style={{

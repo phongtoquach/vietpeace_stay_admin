@@ -28,7 +28,6 @@ export default function FormSelect({
         name={name}
         value={value ?? ''}
         onChange={onChange}
-        required={required}
         disabled={disabled}
         className={`form-select ${error ? 'error' : ''}`}
         {...props}

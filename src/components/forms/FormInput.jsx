@@ -33,7 +33,6 @@ export default function FormInput({
         value={value ?? ''}
         onChange={onChange}
         placeholder={placeholder}
-        required={required}
         disabled={disabled}
         min={min}
         max={max}

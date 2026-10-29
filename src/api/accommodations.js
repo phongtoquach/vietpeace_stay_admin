@@ -67,7 +67,11 @@ export function mapAccommodationSummary(item) {
     location_id: item.location?.id ?? null,
     location: item.location || null,
     province: item.province || null,
-    ward: item.ward || null,
+    // UI cũ (FormPage) đọc `ward` như CHUỖI tên phường (mapping mục 5.1),
+    // còn backend trả object { id, name }. Nếu giữ object, JSX
+    // <option>{formData.ward}</option> sẽ ném lỗi
+    // "Objects are not valid as a React child".
+    ward: item.ward?.name || "",
     address: item.addressLine || "",
     star_rating: item.starRating ?? null,
     featured: Boolean(item.isFeatured),
@@ -81,6 +85,13 @@ export function mapAccommodationSummary(item) {
     cover_image: mappedItem.cover_image,
   });
 
+  // Log kiểu dữ liệu ward để kiểm chứng form Sửa nhận chuỗi, không nhận object.
+  console.log("[mapAccommodationSummary] Phường/xã map sang chuỗi:", {
+    id: item.id,
+    wardObject: item.ward,
+    wardName: mappedItem.ward,
+  });
+
   return mappedItem;
 }
 
@@ -89,6 +100,9 @@ export function mapAccommodationSummary(item) {
  * Mảng được gửi theo format CSV mà backend quy định, ví dụ status=1,2.
  */
 export function buildQueryString(params = {}) {
+  console.group("[buildQueryString]");
+  console.log("[1] Params đầu vào:", params);
+
   const searchParams = new URLSearchParams();
 
   Object.entries(params).forEach(([key, value]) => {
@@ -108,22 +122,54 @@ export function buildQueryString(params = {}) {
   });
 
   const queryString = searchParams.toString();
-  return queryString ? `?${queryString}` : "";
+  const output = queryString ? `?${queryString}` : "";
+  console.log(
+    "[2] Query string trả về:",
+    output || "(rỗng — không có filter nào được gửi)"
+  );
+  console.groupEnd();
+  return output;
 }
 
 export const accommodationsApi = {
   /** Lấy danh sách, filter, sort và pagination từ backend. */
   async getList(params = {}) {
-    const queryString = buildQueryString(params);
-    const payload = await apiFetch(`/accommodations${queryString}`);
+    console.group("[accommodationsApi.getList]");
+    console.log("[1] Params nhận từ AdminContext:", params);
 
-    return {
-      ...payload,
-      data: {
-        ...payload.data,
-        items: (payload.data?.items || []).map(mapAccommodationSummary),
-      },
-    };
+    const queryString = buildQueryString(params);
+    const path = `/accommodations${queryString}`;
+    console.log("[2] API path:", path);
+
+    try {
+      const payload = await apiFetch(path);
+
+      const rawItems = payload.data?.items || [];
+      console.log("[3] Backend trả về:", {
+        itemCount: rawItems.length,
+        pagination: payload.data?.pagination
+      });
+
+      const mappedItems = rawItems.map(mapAccommodationSummary);
+      console.log("[4] Số item sau adapter:", mappedItems.length);
+
+      return {
+        ...payload,
+        data: {
+          ...payload.data,
+          items: mappedItems,
+        },
+      };
+    } catch (error) {
+      console.error("[ERROR] getList thất bại:", {
+        message: error.message,
+        status: error.status,
+        errorCode: error.errorCode,
+      });
+      throw error;
+    } finally {
+      console.groupEnd();
+    }
   },
 
   /** Lấy chi tiết một accommodation theo id. */

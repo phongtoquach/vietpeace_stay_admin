@@ -892,7 +892,6 @@ export default function RoomTypeFormPage() {
                           type="number"
                           step="50000"
                           min="0"
-                          required
                           className="form-input"
                           value={val}
                           onChange={(e) => {
