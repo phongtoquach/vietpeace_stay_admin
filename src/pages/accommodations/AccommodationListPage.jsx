@@ -25,6 +25,8 @@ export default function AccommodationListPage() {
 
   // Filters state
   const [searchTerm, setSearchTerm] = useState(searchParams.get('search') || '');
+  // Chỉ dùng từ khóa này để gọi API sau khi người dùng ngừng gõ 300ms.
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState(searchParams.get('search') || '');
   const [typeFilter, setTypeFilter] = useState('');
   const [locationFilter, setLocationFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -41,19 +43,50 @@ export default function AccommodationListPage() {
   const [deleteTargetId, setDeleteTargetId] = useState(null);
 
   useEffect(() => {
+    // Hủy timer cũ nếu người dùng tiếp tục gõ trước 300ms.
+    const timerId = window.setTimeout(() => {
+      console.log(
+        '[AccommodationListPage] Debounce hoàn tất, từ khóa mới:',
+        searchTerm
+      );
+      setDebouncedSearchTerm(searchTerm);
+    }, 300);
+
+    return () => {
+      window.clearTimeout(timerId);
+    };
+  }, [searchTerm]);
+
+  useEffect(() => {
     let cancelled = false;
     async function loadAccommodations() {
+      // Backend chịu trách nhiệm filter, sort và pagination trên toàn bộ dữ liệu.
       const requestParams = {
+        q: debouncedSearchTerm || undefined,
+        typeId: typeFilter || undefined,
+        locationId: locationFilter || undefined,
+        status: statusFilter || undefined,
+        isFeatured: featuredFilter || undefined,
+        sortBy: sortField,
+        sortDir: sortDirection,
         page: currentPage,
         limit: pageSize
       };
       console.group(
         `[AccommodationListPage] Tải trang ${currentPage}`
       );
-      console.log(
-        '[1] Params gửi lên API:',
+      console.log('[AccommodationListPage] Params filter gửi lên API:', {
+        search: debouncedSearchTerm,
+        typeId: typeFilter,
+        locationId: locationFilter,
+        status: statusFilter,
+        isFeatured: featuredFilter,
+        sortBy: sortField,
+        sortDir: sortDirection,
+        page: currentPage,
+        limit: pageSize,
         requestParams
-      );
+      });
       try {
         const payload = await fetchAccommodations(requestParams);
         if (cancelled) {
@@ -95,7 +128,18 @@ export default function AccommodationListPage() {
     return () => {
       cancelled = true;
     };
-  }, [fetchAccommodations, currentPage, pageSize]);
+  }, [
+    fetchAccommodations,
+    debouncedSearchTerm,
+    typeFilter,
+    locationFilter,
+    statusFilter,
+    featuredFilter,
+    sortField,
+    sortDirection,
+    currentPage,
+    pageSize
+  ]);
 
   // Map location names for display
   const locationMap = useMemo(() => {
@@ -113,32 +157,8 @@ export default function AccommodationListPage() {
     return map;
   }, [locations]);
 
-  // Filtered and sorted dataset
-  const filteredData = useMemo(() => {
-    return accommodations.filter((item) => {
-      const matchSearch =
-        !searchTerm ||
-        item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.address.toLowerCase().includes(searchTerm.toLowerCase());
-
-      const matchType = !typeFilter || item.type === typeFilter;
-      const matchLocation = !locationFilter || String(item.location_id) === String(locationFilter);
-      const matchStatus = !statusFilter || item.status === statusFilter;
-      const matchFeatured = !featuredFilter || (featuredFilter === 'true' ? item.featured : !item.featured);
-
-      return matchSearch && matchType && matchLocation && matchStatus && matchFeatured;
-    }).sort((a, b) => {
-      let valA = a[sortField];
-      let valB = b[sortField];
-      if (typeof valA === 'string') valA = valA.toLowerCase();
-      if (typeof valB === 'string') valB = valB.toLowerCase();
-      if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
-      if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
-      return 0;
-    });
-  }, [accommodations, searchTerm, typeFilter, locationFilter, statusFilter, featuredFilter, sortField, sortDirection]);
-
+  // Backend đã filter, sort và paginate toàn bộ dữ liệu.
+  // Frontend chỉ render trang hiện tại, không lọc lại lần thứ hai.
   // Dữ liệu đã được backend phân trang sẵn.
   // Không dùng slice() lần nữa vì sẽ cắt nhầm trang hiện tại.
   const paginatedData = accommodations;
@@ -376,14 +396,16 @@ export default function AccommodationListPage() {
             className="filter-select"
             value={typeFilter}
             onChange={(e) => {
-              setTypeFilter(e.target.value);
+              const value = e.target.value;
+              console.log('[AccommodationListPage] Filter loại hình thay đổi:', value || '(tất cả)');
+              setTypeFilter(value);
               setCurrentPage(1);
             }}
           >
             <option value="">Tất cả loại hình</option>
-            <option value="Hotel">Khách sạn (Hotel)</option>
-            <option value="Resort">Khu nghỉ dưỡng (Resort)</option>
-            <option value="Homestay">Homestay</option>
+            <option value="1">Khách sạn (Hotel)</option>
+            <option value="2">Khu nghỉ dưỡng (Resort)</option>
+            <option value="3">Homestay</option>
           </select>
         </div>
 
@@ -394,7 +416,9 @@ export default function AccommodationListPage() {
             className="filter-select"
             value={locationFilter}
             onChange={(e) => {
-              setLocationFilter(e.target.value);
+              const value = e.target.value;
+              console.log('[AccommodationListPage] Filter điểm đến thay đổi:', value || '(tất cả)');
+              setLocationFilter(value);
               setCurrentPage(1);
             }}
           >
@@ -414,13 +438,16 @@ export default function AccommodationListPage() {
             className="filter-select"
             value={statusFilter}
             onChange={(e) => {
-              setStatusFilter(e.target.value);
+              const value = e.target.value;
+              console.log('[AccommodationListPage] Filter trạng thái thay đổi:', value || '(tất cả)');
+              setStatusFilter(value);
               setCurrentPage(1);
             }}
           >
             <option value="">Tất cả trạng thái</option>
-            <option value="Active">Đang hoạt động</option>
-            <option value="Inactive">Ngừng hoạt động</option>
+            <option value="0">Bản nháp</option>
+            <option value="1">Đang hoạt động</option>
+            <option value="2">Ngừng hoạt động</option>
           </select>
         </div>
 
@@ -431,7 +458,9 @@ export default function AccommodationListPage() {
             className="filter-select"
             value={featuredFilter}
             onChange={(e) => {
-              setFeaturedFilter(e.target.value);
+              const value = e.target.value;
+              console.log('[AccommodationListPage] Filter nổi bật thay đổi:', value || '(tất cả)');
+              setFeaturedFilter(value);
               setCurrentPage(1);
             }}
           >

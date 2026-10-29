@@ -1,10 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { accommodationsApi } from '../../api/accommodations.js';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useAdmin } from '../../context/AdminContext.jsx';
 import PageHeader from '../../components/common/PageHeader.jsx';
 import StatusBadge from '../../components/common/StatusBadge.jsx';
 import ConfirmDialog from '../../components/common/ConfirmDialog.jsx';
-import { formatVND, formatDateVN } from '../../data/mockData.js';
+// Helper định dạng dùng chung, không phụ thuộc dữ liệu mock.
+import { formatVND, formatDateVN } from '../../data/entities.js';
 import {
   ArrowLeft,
   Edit2,
@@ -14,7 +16,6 @@ import {
   Mail,
   Star,
   Plus,
-  Bed,
   CheckCircle,
   Calendar,
   DollarSign
@@ -24,33 +25,81 @@ export default function AccommodationDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const {
-    accommodations,
     locations,
-    roomTypes,
-    amenities,
-    attractions,
     roomRates,
     ratePeriods,
     getRoomWeekdayRates,
-    deleteAccommodation,
-    deleteRoomType
+    deleteAccommodation
   } = useAdmin();
+
+  const [accommodation, setAccommodation] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(true);
+  const [detailError, setDetailError] = useState(null);
 
   const [activeTab, setActiveTab] = useState('general');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [roomToDelete, setRoomToDelete] = useState(null);
 
-  const accommodation = accommodations.find((a) => a.id === Number(id));
+  useEffect(() => {
+    let cancelled = false;
 
-  if (!accommodation) {
+    async function loadAccommodationDetail() {
+      console.group('[AccommodationDetailPage] Tải chi tiết');
+      console.log('[1] ID từ URL:', id);
+
+      setDetailLoading(true);
+      setDetailError(null);
+
+      try {
+        const payload = await accommodationsApi.getDetail(id);
+
+        if (cancelled) {
+          console.warn('[2] Component đã unmount, bỏ qua response.');
+          return;
+        }
+
+        console.log('[2] Detail nhận từ API:', payload.data);
+        setAccommodation(payload.data);
+
+        console.log('[3] Detail sẵn sàng render:', {
+          id: payload.data?.id,
+          name: payload.data?.name,
+          imageCount: payload.data?.images?.length || 0,
+        });
+      } catch (error) {
+        if (!cancelled) {
+          console.error('[ERROR] Tải detail thất bại:', error);
+          setDetailError(error);
+        }
+      } finally {
+        if (!cancelled) {
+          setDetailLoading(false);
+          console.log('[4] Hoàn tất tải detail.');
+        }
+
+        console.groupEnd();
+      }
+    }
+
+    loadAccommodationDetail();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
+
+  if (detailLoading) {
+    return <div style={{ padding: '30px' }}>Đang tải chi tiết...</div>;
+  }
+
+  if (detailError || !accommodation) {
     return (
       <div style={{ padding: '30px', textAlign: 'center' }}>
-        <h2 style={{ fontSize: '18px', fontWeight: 700 }}>Không tìm thấy cơ sở lưu trú</h2>
-        <p style={{ color: '#6B7280', margin: '8px 0 16px' }}>
-          Cơ sở lưu trú có mã #{id} không tồn tại hoặc đã bị gỡ bỏ khỏi hệ thống.
+        <h2>Không tìm thấy cơ sở lưu trú</h2>
+        <p>
+          Cơ sở lưu trú có mã #{id} không tồn tại hoặc đã bị gỡ bỏ.
         </p>
         <Link to="/admin/accommodations" className="btn btn-secondary">
-          <ArrowLeft size={14} /> Quay lại danh sách cơ sở lưu trú
+          <ArrowLeft size={14} /> Quay lại danh sách
         </Link>
       </div>
     );
@@ -61,14 +110,18 @@ export default function AccommodationDetailPage() {
   const parentLoc = loc?.parent_location_id ? locations.find((l) => l.id === loc.parent_location_id) : null;
   const locationDisplay = [parentLoc?.name, loc?.name].filter(Boolean).join(' › ') || 'Việt Nam';
 
-  // Associated room types
-  const propertyRoomTypes = roomTypes.filter((r) => r.accommodation_id === accommodation.id);
-
-  // Associated amenities
-  const propertyAmenities = amenities.filter((am) => (accommodation.amenity_ids || []).includes(am.id));
-
-  // Associated nearby attractions
+  // Detail API đã trả đầy đủ các mảng quan hệ.
+  // Không lấy từ context mock vì context chỉ chứa dữ liệu khởi tạo cũ.
+  const propertyRoomTypes = accommodation.room_types || [];
+  const propertyAmenities = accommodation.amenities || [];
   const propertyAttractions = accommodation.attractions || [];
+
+  console.log('[AccommodationDetailPage] Dữ liệu thực tế dùng để render:', {
+    images: accommodation.images?.length || 0,
+    roomTypes: propertyRoomTypes.length,
+    amenities: propertyAmenities.length,
+    attractions: propertyAttractions.length,
+  });
 
   const handleDeleteAccommodation = () => {
     const success = deleteAccommodation(accommodation.id);
@@ -78,12 +131,6 @@ export default function AccommodationDetailPage() {
     setDeleteDialogOpen(false);
   };
 
-  const handleDeleteRoom = () => {
-    if (roomToDelete) {
-      deleteRoomType(roomToDelete.id);
-      setRoomToDelete(null);
-    }
-  };
 
   return (
     <div>
@@ -226,7 +273,7 @@ export default function AccommodationDetailPage() {
           className={`admin-tab ${activeTab === 'images' ? 'active' : ''}`}
           onClick={() => setActiveTab('images')}
         >
-          Hình ảnh ({(accommodation.gallery_images || []).length})
+          Hình ảnh ({accommodation.images?.length || 0})
         </button>
         <button
           type="button"
@@ -321,10 +368,9 @@ export default function AccommodationDetailPage() {
                 <tr>
                   <th>Hình ảnh</th>
                   <th>Tên loại phòng</th>
-                  <th>Giường & Kích thước</th>
+                  <th>Giường & Diện tích</th>
                   <th>Sức chứa</th>
                   <th style={{ textAlign: 'right' }}>Giá gốc / đêm</th>
-                  <th>Hướng nhìn</th>
                   <th>Trạng thái</th>
                   <th style={{ textAlign: 'center' }}>Thao tác</th>
                 </tr>
@@ -332,7 +378,7 @@ export default function AccommodationDetailPage() {
               <tbody>
                 {propertyRoomTypes.length === 0 ? (
                   <tr>
-                    <td colSpan={8} style={{ textAlign: 'center', padding: '30px', color: '#6B7280' }}>
+                    <td colSpan={7} style={{ textAlign: 'center', padding: '30px', color: '#6B7280' }}>
                       Cơ sở lưu trú này chưa có loại phòng nào được thiết lập.
                     </td>
                   </tr>
@@ -358,7 +404,9 @@ export default function AccommodationDetailPage() {
                       <td>
                         <div>{room.bed_type}</div>
                         <div style={{ fontSize: '11px', color: '#6B7280' }} className="tabular-nums">
-                          {room.room_size} m² {room.balcony && '· Có ban công'}
+                          {room.room_size === null || room.room_size === undefined
+                            ? 'Diện tích: —'
+                            : `Diện tích: ${room.room_size} m²`}
                         </div>
                       </td>
                       <td className="tabular-nums" style={{ fontSize: '12px' }}>
@@ -369,10 +417,7 @@ export default function AccommodationDetailPage() {
                         {formatVND(room.base_price)}
                       </td>
                       <td>
-                        <span className="badge badge-neutral">{room.view}</span>
-                      </td>
-                      <td>
-                        <StatusBadge status={room.status} />
+                        <StatusBadge status={room.statusLabel} />
                       </td>
                       <td style={{ textAlign: 'center' }}>
                         <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
@@ -383,14 +428,6 @@ export default function AccommodationDetailPage() {
                           >
                             <Edit2 size={13} />
                           </Link>
-                          <button
-                            type="button"
-                            className="row-action-btn delete"
-                            title="Xóa loại phòng"
-                            onClick={() => setRoomToDelete(room)}
-                          >
-                            <Trash2 size={13} />
-                          </button>
                         </div>
                       </td>
                     </tr>
@@ -498,7 +535,7 @@ export default function AccommodationDetailPage() {
                   </thead>
                   <tbody>
                     {propertyAttractions.map((item) => {
-                      const att = attractions.find((a) => a.id === Number(item.attraction_id));
+                      const att = item;
                       const thumbnail = att?.image || accommodation.cover_image;
 
                       return (
@@ -583,7 +620,7 @@ export default function AccommodationDetailPage() {
           </div>
           <div className="admin-card-body">
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '14px' }}>
-              {(accommodation.gallery_images || [accommodation.cover_image]).map((imgSrc, idx) => (
+              {(accommodation.gallery_images || []).map((imgSrc, idx) => (
                 <div
                   key={idx}
                   style={{
@@ -769,16 +806,7 @@ export default function AccommodationDetailPage() {
         onCancel={() => setDeleteDialogOpen(false)}
       />
 
-      {/* Delete Room Dialog */}
-      <ConfirmDialog
-        isOpen={Boolean(roomToDelete)}
-        title="Xác nhận xóa loại phòng"
-        message={`Bạn có chắc chắn muốn xóa loại phòng "${roomToDelete?.name}" khỏi cơ sở lưu trú này?`}
-        confirmLabel="Xóa loại phòng"
-        confirmVariant="danger"
-        onConfirm={handleDeleteRoom}
-        onCancel={() => setRoomToDelete(null)}
-      />
+
     </div>
   );
 }
