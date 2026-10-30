@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAdmin } from '../../context/AdminContext.jsx';
 import { lookupsApi } from '../../api/lookups.js';
@@ -43,6 +43,9 @@ export default function AccommodationListPage() {
   // Mỗi useState nhận MỘT HÀM khởi tạo: hàm chỉ chạy ở lần render đầu tiên.
   // Nhờ vậy khi F5, state được dựng lại từ query string thay vì giá trị mặc định.
   const [searchTerm, setSearchTerm] = useState(() => searchParams.get('search') || '');
+  const searchInputRef = useRef(null);
+  const searchWasFocusedRef = useRef(false);
+  const searchFocusTimerRef = useRef(null);
   // Từ khóa "chờ" (dùng để gọi API) cũng khôi phục từ URL,
   // để lần fetch đầu tiên sau F5 dùng đúng từ khóa cũ.
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState(
@@ -95,25 +98,14 @@ export default function AccommodationListPage() {
     let cancelled = false;
 
     async function loadLocations() {
-      console.group('[AccommodationListPage] Tải điểm đến cho filter');
-      console.log('[1] Bắt đầu gọi /lookup/locations');
       try {
         const items = await lookupsApi.getLocations();
-        if (cancelled) {
-          console.warn('[2] Component đã unmount, bỏ qua kết quả.');
-          return;
-        }
+        if (cancelled) return;
         setLocations(items);
-        console.log('[3] Đã set state locations:', items.length);
       } catch (error) {
         if (!cancelled) {
           console.error('[ERROR] Không tải được điểm đến:', error);
         }
-      } finally {
-        if (!cancelled) {
-          console.log('[4] Kết thúc tải điểm đến.');
-        }
-        console.groupEnd();
       }
     }
 
@@ -126,42 +118,30 @@ export default function AccommodationListPage() {
   useEffect(() => {
     // Hủy timer cũ nếu người dùng tiếp tục gõ trước 300ms.
     const timerId = window.setTimeout(() => {
-      console.log(
-        '[AccommodationListPage] Debounce hoàn tất, từ khóa mới:',
-        searchTerm
-      );
       setDebouncedSearchTerm(searchTerm);
-    }, 300);
+    }, 500);
 
     return () => {
       window.clearTimeout(timerId);
     };
   }, [searchTerm]);
 
-  // Log MỘT lần khi mount để đối chiếu: F5 xong, các giá trị dưới đây
-  // phải giống hệt trước khi reload — nếu khác, lỗi nằm ở bước đọc URL.
-  useEffect(() => {
-    console.group('[AccommodationListPage] [URL] Khôi phục bộ lọc khi mount/F5');
-    console.log('[1] Query string hiện tại:', searchParams.toString() || '(rỗng)');
-    console.log('[2] State sau khi khôi phục:', {
-      search: debouncedSearchTerm,
-      typeId: typeFilter,
-      locationId: locationFilter,
-      status: statusFilter,
-      isFeatured: featuredFilter,
-      sortBy: sortField,
-      sortDir: sortDirection,
-      page: currentPage,
-      limit: pageSize
-    });
-    console.groupEnd();
-    // Chỉ chạy ở lần mount đầu; các lần đổi URL sau do effect đồng bộ bên dưới xử lý.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  useLayoutEffect(() => {
+    if (!searchWasFocusedRef.current) return;
+    const input = searchInputRef.current;
+    if (!input) return;
+    input.focus();
+    const cursor = input.value.length;
+    input.setSelectionRange(cursor, cursor);
+  });
+
+  useEffect(() => () => window.clearTimeout(searchFocusTimerRef.current), []);
 
   // Đồng bộ state -> URL. Nhờ effect này, F5 luôn dựng lại được màn hình.
   // Ghi bằng debouncedSearchTerm (không phải searchTerm) để không ghi URL mỗi phím gõ.
   useEffect(() => {
+    // Không điều hướng route khi người dùng đang gõ: navigation làm input bị remount.
+    if (document.activeElement === searchInputRef.current) return;
     // Chỉ đưa lên URL các giá trị KHÁC mặc định → URL ngắn, dễ đọc.
     const nextParams = {};
     if (debouncedSearchTerm) nextParams.search = debouncedSearchTerm;
@@ -179,19 +159,9 @@ export default function AccommodationListPage() {
     const nextQuery = new URLSearchParams(nextParams).toString();
     const currentQuery = searchParams.toString();
 
-    console.log('[AccommodationListPage] [URL] So sánh query:', {
-      nextQuery: nextQuery || '(rỗng)',
-      currentQuery: currentQuery || '(rỗng)'
-    });
-
     // Chốt chặn vòng lặp: setSearchParams làm searchParams đổi -> effect chạy lại.
     // Lần chạy thứ hai thấy chuỗi giống hệt thì dừng, không ghi nữa.
-    if (nextQuery === currentQuery) {
-      console.log('[AccommodationListPage] [URL] Không đổi → bỏ qua ghi URL');
-      return;
-    }
-
-    console.log('[AccommodationListPage] [URL] Ghi URL (replace: true):', nextParams);
+    if (nextQuery === currentQuery) return;
 
     // replace: true -> thay entry hiện tại thay vì đẩy thêm entry mới.
     // Mục đích: bấm Back không phải "lùi từng lần lọc", mà về trang trước đó.
@@ -212,6 +182,7 @@ export default function AccommodationListPage() {
 
   useEffect(() => {
     let cancelled = false;
+    const abortController = new AbortController();
     async function loadAccommodations() {
       // Backend chịu trách nhiệm filter, sort và pagination trên toàn bộ dữ liệu.
       const requestParams = {
@@ -225,41 +196,8 @@ export default function AccommodationListPage() {
         page: currentPage,
         limit: pageSize
       };
-      console.group(
-        `[AccommodationListPage] Tải trang ${currentPage}`
-      );
-      console.log('[1] Params filter gửi lên API:', {
-        search: debouncedSearchTerm,
-        typeId: typeFilter,
-        locationId: locationFilter,
-        status: statusFilter,
-        isFeatured: featuredFilter,
-        sortBy: sortField,
-        sortDir: sortDirection,
-        page: currentPage,
-        limit: pageSize,
-        requestParams
-      });
       try {
-        const payload = await fetchAccommodations(requestParams);
-        if (cancelled) {
-          console.warn(
-            '[2] Component đã unmount, bỏ qua response.'
-          );
-          return;
-        }
-        console.log(
-          '[2] API trả về số item:',
-          payload?.data?.items?.length || 0
-        );
-        console.log(
-          '[3] Pagination backend:',
-          payload?.data?.pagination
-        );
-        console.log(
-          '[4] Item đầu tiên của trang:',
-          payload?.data?.items?.[0] || null
-        );
+        await fetchAccommodations({ ...requestParams, signal: abortController.signal });
       } catch (error) {
         if (!cancelled) {
           console.error(
@@ -268,20 +206,16 @@ export default function AccommodationListPage() {
           );
         }
       } finally {
+        // Đánh dấu đã có kết quả thật (kể cả lỗi) để bỏ chặn skeleton.
         if (!cancelled) {
-          console.log(
-            '[5] Hoàn tất request trang:',
-            currentPage
-          );
-          // Đánh dấu đã có kết quả thật (kể cả lỗi) để bỏ chặn skeleton.
           setFirstLoadSettled(true);
         }
-        console.groupEnd();
       }
     }
     loadAccommodations();
     return () => {
       cancelled = true;
+      abortController.abort();
     };
   }, [
     fetchAccommodations,
@@ -295,21 +229,6 @@ export default function AccommodationListPage() {
     currentPage,
     pageSize
   ]);
-
-  // Theo dõi luồng loading: context bật/tắt cờ này trong fetchAccommodations,
-  // trang chỉ đọc lại và chuyển tiếp xuống DataTable.
-  useEffect(() => {
-    console.log(
-      '[AccommodationListPage] accommodationsLoading đổi thành:',
-      accommodationsLoading
-    );
-    return () => {
-      console.log(
-        '[AccommodationListPage] cleanup effect loading, giá trị cũ:',
-        accommodationsLoading
-      );
-    };
-  }, [accommodationsLoading]);
 
   // Backend đã filter, sort và paginate toàn bộ dữ liệu.
   // Frontend chỉ render trang hiện tại, không lọc lại lần thứ hai.
@@ -378,16 +297,6 @@ export default function AccommodationListPage() {
               objectFit: 'cover'
             }}
             referrerPolicy="no-referrer"
-            onLoad={() => {
-              console.log(
-                '[AccommodationListPage] Ảnh tải thành công:',
-                {
-                  id: row.id,
-                  name: row.name,
-                  src: row.cover_image
-                }
-              );
-            }}
             onError={(event) => {
               console.error(
                 '[AccommodationListPage] Ảnh tải thất bại:',
@@ -460,11 +369,6 @@ export default function AccommodationListPage() {
         // star_rating NULL = chưa xếp hạng, không phải 0 sao.
         // Nếu không tách nhánh, chuỗi `${null}.0` sẽ render thành ".0".
         if (row.star_rating === null || row.star_rating === undefined) {
-          // Chỉ log dòng thật sự thiếu hạng sao, tránh spam 10 dòng mỗi lần render.
-          console.log(
-            '[AccommodationListPage] Cơ sở chưa có hạng sao:',
-            { id: row.id, name: row.name }
-          );
           return <span style={{ color: '#6B7280' }}>—</span>;
         }
 
@@ -543,15 +447,42 @@ export default function AccommodationListPage() {
           <label className="filter-label" htmlFor="search-acc">Từ khóa tìm kiếm:</label>
           <div style={{ position: 'relative' }}>
             <input
+              ref={searchInputRef}
+              onFocus={() => {
+                searchWasFocusedRef.current = true;
+              }}
+              onBlur={(e) => {
+                // Nếu blur không chuyển sang một control khác, coi đây là blur do rerender.
+                const nextTarget = e.relatedTarget;
+                if (!nextTarget || !nextTarget.matches?.('input, select, textarea, button, a')) {
+                  searchWasFocusedRef.current = true;
+                  window.requestAnimationFrame(() => searchInputRef.current?.focus());
+                }
+              }}
+              autoFocus={searchWasFocusedRef.current}
               id="search-acc"
               type="text"
               className="filter-input"
               style={{ width: '100%', paddingLeft: '28px' }}
               placeholder="Tìm theo tên cơ sở, mã, địa chỉ..."
-              value={searchTerm}
+              defaultValue={searchTerm}
               onChange={(e) => {
+                // Giữ trạng thái focus qua các render do debounce, URL và API.
+                searchWasFocusedRef.current = true;
+                window.clearTimeout(searchFocusTimerRef.current);
+                searchFocusTimerRef.current = window.setTimeout(() => {
+                  searchWasFocusedRef.current = false;
+                }, 1200);
                 setSearchTerm(e.target.value);
                 setCurrentPage(1);
+                // Giành lại focus sau khi React hoàn tất commit state update.
+                window.requestAnimationFrame(() => {
+                  const input = searchInputRef.current;
+                  if (input) {
+                    input.focus();
+                    input.setSelectionRange(input.value.length, input.value.length);
+                  }
+                });
               }}
             />
             <Search size={14} style={{ position: 'absolute', left: '8px', top: '9px', color: '#6B7280' }} />
@@ -566,7 +497,6 @@ export default function AccommodationListPage() {
             value={typeFilter}
             onChange={(e) => {
               const value = e.target.value;
-              console.log('[AccommodationListPage] Filter loại hình thay đổi:', value || '(tất cả)');
               setTypeFilter(value);
               setCurrentPage(1);
             }}
@@ -586,7 +516,6 @@ export default function AccommodationListPage() {
             value={locationFilter}
             onChange={(e) => {
               const value = e.target.value;
-              console.log('[AccommodationListPage] Filter điểm đến thay đổi:', value || '(tất cả)');
               setLocationFilter(value);
               setCurrentPage(1);
             }}
@@ -610,7 +539,6 @@ export default function AccommodationListPage() {
             value={statusFilter}
             onChange={(e) => {
               const value = e.target.value;
-              console.log('[AccommodationListPage] Filter trạng thái thay đổi:', value || '(tất cả)');
               setStatusFilter(value);
               setCurrentPage(1);
             }}
@@ -630,7 +558,6 @@ export default function AccommodationListPage() {
             value={featuredFilter}
             onChange={(e) => {
               const value = e.target.value;
-              console.log('[AccommodationListPage] Filter nổi bật thay đổi:', value || '(tất cả)');
               setFeaturedFilter(value);
               setCurrentPage(1);
             }}
@@ -676,24 +603,9 @@ export default function AccommodationListPage() {
         totalItems={totalItems}
         pageSizeOptions={ALLOWED_PAGE_SIZES}
         onPageChange={(page) => {
-          console.log(
-            '[Pagination] Người dùng chọn trang:',
-            page
-          );
-
-          console.log(
-            '[Pagination] Trang hiện tại trước khi đổi:',
-            currentPage
-          );
-
           setCurrentPage(page);
         }}
         onPageSizeChange={(size) => {
-          console.log(
-            '[Pagination] Người dùng đổi số dòng:',
-            size
-          );
-
           setPageSize(size);
           setCurrentPage(1);
         }}

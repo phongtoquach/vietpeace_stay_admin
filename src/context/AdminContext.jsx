@@ -103,16 +103,11 @@ export function AdminProvider({ children }) {
   };
 
   const fetchAccommodations = useCallback(async (params = {}) => {
-    console.group('[AdminContext - fetchAccommodations]');
-    console.log('[1] Input params từ ListPage:', params);
-
     setAccommodationsLoading(true);
     setAccommodationsError(null);
-    console.log('[2] Bật loading, xoá lỗi cũ');
 
     try {
       const payload = await accommodationsApi.getList(params);
-      console.log('[3] API payload:', payload);
 
       setAccommodations(payload.data?.items || []);
       setAccommodationsPagination(
@@ -123,10 +118,6 @@ export function AdminProvider({ children }) {
           totalPages: 0
         }
       );
-      console.log('[4] Đã set state:', {
-        itemsCount: payload.data?.items?.length || 0,
-        pagination: payload.data?.pagination
-      });
       return payload;
     } catch (error) {
       console.error('[ERROR] fetchAccommodations thất bại:', {
@@ -139,8 +130,6 @@ export function AdminProvider({ children }) {
       throw error;
     } finally {
       setAccommodationsLoading(false);
-      console.log('[5] Tắt loading');
-      console.groupEnd();
     }
   }, []);
 

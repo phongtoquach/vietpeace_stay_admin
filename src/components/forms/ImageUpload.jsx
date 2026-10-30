@@ -7,6 +7,7 @@ export default function ImageUpload({
   onChange,
   multiple = false,
   helperText = "Tải lên tệp ảnh JPG hoặc PNG chất lượng cao (tối đa 5MB mỗi ảnh)."
+  , onFilesSelected
 }) {
   const fileInputRef = useRef(null);
 
@@ -14,6 +15,10 @@ export default function ImageUpload({
     const files = Array.from(e.target.files);
     if (files.length === 0) return;
 
+    if (onFilesSelected) {
+      onFilesSelected(files);
+      return;
+    }
     const newImageUrls = files.map((file) => URL.createObjectURL(file));
 
     if (multiple) {

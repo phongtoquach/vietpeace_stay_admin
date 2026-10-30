@@ -42,37 +42,15 @@ export default function AccommodationDetailPage() {
     let cancelled = false;
 
     async function loadAccommodationDetail() {
-      console.group('[AccommodationDetailPage] Tải chi tiết');
-      console.log('[1] ID từ URL:', id);
-
       setDetailLoading(true);
       setDetailError(null);
 
       try {
         const payload = await accommodationsApi.getDetail(id);
 
-        if (cancelled) {
-          console.warn('[2] Component đã unmount, bỏ qua response.');
-          return;
-        }
+        if (cancelled) return;
 
-        console.log('[2] Detail nhận từ API:', payload.data);
         setAccommodation(payload.data);
-
-        console.log(
-          '[3] Hạng sao:',
-          payload.data?.star_rating === null || payload.data?.star_rating === undefined
-            ? 'NULL — ẩn khối sao ở header'
-            : `${payload.data.star_rating} sao — hiện icon`
-        );
-
-        console.log('[4] Detail sẵn sàng render:', {
-          id: payload.data?.id,
-          name: payload.data?.name,
-          imageCount: payload.data?.images?.length || 0,
-          status: payload.data?.status,
-          statusLabel: payload.data?.statusLabel,
-        });
       } catch (error) {
         if (!cancelled) {
           console.error('[ERROR] Tải detail thất bại:', error);
@@ -81,10 +59,7 @@ export default function AccommodationDetailPage() {
       } finally {
         if (!cancelled) {
           setDetailLoading(false);
-          console.log('[5] Hoàn tất tải detail.');
         }
-
-        console.groupEnd();
       }
     }
 
@@ -147,21 +122,6 @@ export default function AccommodationDetailPage() {
     Number.isFinite(parsedStarCount) && parsedStarCount > 0
       ? Math.min(Math.round(parsedStarCount), 5)
       : 0;
-
-  console.log('[AccommodationDetailPage] Dữ liệu thực tế dùng để render:', {
-    locationName: accommodation.location?.name || null,
-    images: accommodation.images?.length || 0,
-    roomTypes: propertyRoomTypes.length,
-    amenities: propertyAmenities.length,
-    attractions: propertyAttractions.length,
-  });
-
-  console.log('[AccommodationDetailPage] Địa chỉ đầy đủ:', {
-    addressLine: accommodation.address,
-    ward: accommodation.ward?.name || null,
-    province: accommodation.province?.name || null,
-    fullAddress
-  });
 
   const handleDeleteAccommodation = () => {
     const success = deleteAccommodation(accommodation.id);

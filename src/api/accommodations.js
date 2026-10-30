@@ -14,7 +14,6 @@ const API_ORIGIN = "http://localhost:3002";
 
 export function buildImageUrl(imageUrl) {
   if (!imageUrl) {
-    console.log("[buildImageUrl] Không có imageUrl, trả về null");
     return null;
   }
   // Nếu sau này backend đã trả URL đầy đủ,
@@ -22,18 +21,13 @@ export function buildImageUrl(imageUrl) {
   if (
     imageUrl.startsWith("http://") ||
     imageUrl.startsWith("https://") ||
-    imageUrl.startsWith("data:")
+    imageUrl.startsWith("data:") ||
+    imageUrl.startsWith("blob:")
   ) {
-    console.log("[buildImageUrl] URL đã đầy đủ:", imageUrl);
     return imageUrl;
   }
   const normalizedPath = imageUrl.startsWith("/") ? imageUrl : `/${imageUrl}`;
-  const absoluteUrl = `${API_ORIGIN}${normalizedPath}`;
-  console.log("[buildImageUrl] Chuyển URL tương đối thành URL tuyệt đối:", {
-    input: imageUrl,
-    output: absoluteUrl,
-  });
-  return absoluteUrl;
+  return `${API_ORIGIN}${normalizedPath}`;
 }
 
 /**
@@ -43,13 +37,7 @@ export function buildImageUrl(imageUrl) {
  * Adapter là lớp trung gian để hai phía không phải phụ thuộc trực tiếp vào nhau.
  */
 export function mapAccommodationSummary(item) {
-  console.log("[mapAccommodationSummary] Đang map accommodation:", {
-    id: item.id,
-    name: item.name,
-    coverImageUrl: item.coverImageUrl,
-  });
-
-  const mappedItem = {
+  return {
     id: item.id,
     code: item.code,
     name: item.name,
@@ -79,20 +67,6 @@ export function mapAccommodationSummary(item) {
     amenities_count: item.amenitiesCount ?? 0,
     updatedAt: item.updatedAt || null,
   };
-
-  console.log("[mapAccommodationSummary] Kết quả sau khi map:", {
-    id: mappedItem.id,
-    cover_image: mappedItem.cover_image,
-  });
-
-  // Log kiểu dữ liệu ward để kiểm chứng form Sửa nhận chuỗi, không nhận object.
-  console.log("[mapAccommodationSummary] Phường/xã map sang chuỗi:", {
-    id: item.id,
-    wardObject: item.ward,
-    wardName: mappedItem.ward,
-  });
-
-  return mappedItem;
 }
 
 /**
@@ -100,9 +74,6 @@ export function mapAccommodationSummary(item) {
  * Mảng được gửi theo format CSV mà backend quy định, ví dụ status=1,2.
  */
 export function buildQueryString(params = {}) {
-  console.group("[buildQueryString]");
-  console.log("[1] Params đầu vào:", params);
-
   const searchParams = new URLSearchParams();
 
   Object.entries(params).forEach(([key, value]) => {
@@ -122,36 +93,32 @@ export function buildQueryString(params = {}) {
   });
 
   const queryString = searchParams.toString();
-  const output = queryString ? `?${queryString}` : "";
-  console.log(
-    "[2] Query string trả về:",
-    output || "(rỗng — không có filter nào được gửi)"
-  );
-  console.groupEnd();
-  return output;
+  return queryString ? `?${queryString}` : "";
 }
 
 export const accommodationsApi = {
+  async uploadImage(file) {
+    const body = new FormData();
+    body.append("file", file);
+    const payload = await apiFetch("/uploads/accommodations", {
+      method: "POST",
+      body,
+    });
+    // ImageUpload cần URL tuyệt đối vì frontend chạy port 5175,
+    // còn file tĩnh được backend phục vụ ở port 3002.
+    return buildImageUrl(payload.data.url);
+  },
   /** Lấy danh sách, filter, sort và pagination từ backend. */
   async getList(params = {}) {
-    console.group("[accommodationsApi.getList]");
-    console.log("[1] Params nhận từ AdminContext:", params);
-
-    const queryString = buildQueryString(params);
+    const { signal, ...queryParams } = params;
+    const queryString = buildQueryString(queryParams);
     const path = `/accommodations${queryString}`;
-    console.log("[2] API path:", path);
 
     try {
-      const payload = await apiFetch(path);
+      const payload = await apiFetch(path, { signal });
 
       const rawItems = payload.data?.items || [];
-      console.log("[3] Backend trả về:", {
-        itemCount: rawItems.length,
-        pagination: payload.data?.pagination
-      });
-
       const mappedItems = rawItems.map(mapAccommodationSummary);
-      console.log("[4] Số item sau adapter:", mappedItems.length);
 
       return {
         ...payload,
@@ -167,25 +134,15 @@ export const accommodationsApi = {
         errorCode: error.errorCode,
       });
       throw error;
-    } finally {
-      console.groupEnd();
     }
   },
 
-  /** Lấy chi tiết một accommodation theo id. */
+  /** Cập nhật một accommodation theo id (PUT). */
   async update(id, data) {
-    console.group("[accommodationsApi.update]");
-    console.log("[1] ID cập nhật:", id);
-    console.log("[2] Payload gửi backend:", data);
-
     try {
       const payload = await apiFetch(`/accommodations/${id}`, {
         method: "PUT",
         body: JSON.stringify(data),
-      });
-      console.log("[3] Cập nhật thành công:", {
-        id: payload.data?.id,
-        name: payload.data?.name,
       });
       return payload.data;
     } catch (error) {
@@ -196,39 +153,40 @@ export const accommodationsApi = {
         errors: error.errors,
       });
       throw error;
-    } finally {
-      console.groupEnd();
+    }
+  },
+
+  /** Tạo mới một accommodation (POST) — trả về DTO detail vừa tạo. */
+  async create(data) {
+    try {
+      const payload = await apiFetch(`/accommodations`, {
+        method: "POST",
+        body: JSON.stringify(data),
+      });
+      return payload.data;
+    } catch (error) {
+      // Lỗi 400/409 mang theo error.errors ({ code: "..." }) để form gắn vào đúng ô input
+      console.error("[ERROR] Tạo mới thất bại:", {
+        message: error.message,
+        status: error.status,
+        errorCode: error.errorCode,
+        errors: error.errors,
+      });
+      throw error; // ném lại để handleSubmit gọi setErrors
     }
   },
 
   async getDetail(id) {
-    console.group("[accommodationsApi.getDetail]");
-    console.log("[1] ID nhận từ DetailPage:", id);
-
     if (!id) {
       console.error("[ERROR] Thiếu accommodation id.");
-      console.groupEnd();
       throw new Error("Thiếu accommodation id.");
     }
 
     const path = `/accommodations/${id}`;
-    console.log("[2] API path:", path);
 
     try {
       const payload = await apiFetch(path);
-
-      console.log("[3] DTO detail nhận từ backend:", payload.data);
-
       const mappedData = mapAccommodationDetail(payload.data);
-
-      console.log("[4] Detail sau khi adapter:", mappedData);
-      console.log("[5] Số ảnh:", mappedData?.images?.length || 0);
-      console.log("[6] Số tiện nghi:", mappedData?.amenities?.length || 0);
-      console.log(
-        "[7] Số điểm tham quan:",
-        mappedData?.attractions?.length || 0,
-      );
-      console.log("[8] Số loại phòng:", mappedData?.roomTypes?.length || 0);
 
       return {
         ...payload,
@@ -241,8 +199,6 @@ export const accommodationsApi = {
         errorCode: error.errorCode,
       });
       throw error;
-    } finally {
-      console.groupEnd();
     }
   },
 };
@@ -259,14 +215,10 @@ export const accommodationsApi = {
  */
 
 export function mapAccommodationDetail(item) {
-  console.group("[mapAccommodationDetail]");
-  console.log("[1] DTO đầu vào:", item);
   if (!item) {
-    console.warn("[2] DTO detail rỗng.");
-    console.groupEnd();
     return null;
   }
-  const mappedItem = {
+  return {
     ...item,
     cover_image: buildImageUrl(item.coverImageUrl),
     address: item.addressLine || "",
@@ -318,19 +270,4 @@ export function mapAccommodationDetail(item) {
       accommodation_id: item.id,
     })),
   };
-  console.log("[3] Các field chính sau adapter:", {
-    id: mappedItem.id,
-    name: mappedItem.name,
-    cover_image: mappedItem.cover_image,
-    address: mappedItem.address,
-    star_rating: mappedItem.star_rating,
-  });
-  console.log("[4] Số mảng con sau adapter:", {
-    images: mappedItem.images.length,
-    amenities: mappedItem.amenities.length,
-    attractions: mappedItem.attractions.length,
-    room_types: mappedItem.room_types.length,
-  });
-  console.groupEnd();
-  return mappedItem;
 }

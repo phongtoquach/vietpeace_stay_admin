@@ -1,5 +1,13 @@
 import { apiFetch } from "./client";
 
+function logLookupError(name, error) {
+  console.error(`[ERROR] ${name} thất bại:`, {
+    message: error.message,
+    status: error.status,
+    errorCode: error.errorCode,
+  });
+}
+
 export const lookupsApi = {
   /**
    * Lấy danh sách điểm đến thật từ bảng dbo.locations.
@@ -7,9 +15,6 @@ export const lookupsApi = {
    * Output: mảng [{ id, parentId, provinceId, name, slug, provinceName }]
    */
   async getLocations(params = {}) {
-    console.group("[lookupsApi.getLocations]");
-    console.log("[1] Params nhận vào:", params);
-
     // Chỉ gắn tham số có giá trị; gửi chuỗi rỗng sẽ thành ?q= và BE hiểu là filter rỗng.
     const search = new URLSearchParams();
     if (params.provinceId) search.set("provinceId", params.provinceId);
@@ -19,23 +24,13 @@ export const lookupsApi = {
 
     // Lưu ý: prefix route là /lookup (số ít), không phải /lookups.
     const path = `/lookup/locations${query ? `?${query}` : ""}`;
-    console.log("[2] API path:", path);
 
     try {
       const payload = await apiFetch(path);
-      const items = payload?.data?.items || [];
-      console.log("[3] Số điểm đến nhận được:", items.length);
-      console.log("[4] Item đầu tiên (để đối chiếu id thật):", items[0] || null);
-      return items;
+      return payload?.data?.items || [];
     } catch (error) {
-      console.error("[ERROR] getLocations thất bại:", {
-        message: error.message,
-        status: error.status,
-        errorCode: error.errorCode,
-      });
+      logLookupError("getLocations", error);
       throw error;
-    } finally {
-      console.groupEnd();
     }
   },
 
@@ -45,33 +40,16 @@ export const lookupsApi = {
    * Output: mảng [{ id, code, name, fullName, administrativeType }]
    */
   async getWards(provinceId) {
-    console.group("[lookupsApi.getWards]");
-    console.log("[1] provinceId nhận vào:", provinceId);
-
-    if (!provinceId) {
-      console.warn("[2] Không có provinceId → trả mảng rỗng, không gọi API.");
-      console.groupEnd();
-      return [];
-    }
+    if (!provinceId) return [];
 
     const path = `/lookup/wards?provinceId=${provinceId}`;
-    console.log("[3] API path:", path);
 
     try {
       const payload = await apiFetch(path);
-      const items = payload?.data?.items || [];
-      console.log("[4] Số phường/xã nhận được:", items.length);
-      console.log("[5] Item đầu tiên:", items[0] || null);
-      return items;
+      return payload?.data?.items || [];
     } catch (error) {
-      console.error("[ERROR] getWards thất bại:", {
-        message: error.message,
-        status: error.status,
-        errorCode: error.errorCode,
-      });
+      logLookupError("getWards", error);
       throw error;
-    } finally {
-      console.groupEnd();
     }
   },
 
@@ -81,27 +59,14 @@ export const lookupsApi = {
    * Output: mảng [{ id, code, name, amenityScope, categoryCode, categoryName, iconKey, description, sortOrder }]
    */
   async getAmenities(scope = "accommodation") {
-    console.group("[lookupsApi.getAmenities]");
-    console.log("[1] scope:", scope);
-
     const path = `/lookup/amenities?scope=${scope}`;
-    console.log("[2] API path:", path);
 
     try {
       const payload = await apiFetch(path);
-      const items = payload?.data?.items || [];
-      console.log("[3] Số tiện nghi nhận được:", items.length);
-      console.log("[4] Item đầu tiên:", items[0] || null);
-      return items;
+      return payload?.data?.items || [];
     } catch (error) {
-      console.error("[ERROR] getAmenities thất bại:", {
-        message: error.message,
-        status: error.status,
-        errorCode: error.errorCode,
-      });
+      logLookupError("getAmenities", error);
       throw error;
-    } finally {
-      console.groupEnd();
     }
   },
 
@@ -113,35 +78,18 @@ export const lookupsApi = {
    * Output: mảng [{ id, name, addressLine, imageUrl, isActive, latitude, longitude }]
    */
   async getAttractions(locationId, includeInactive = false) {
-    console.group("[lookupsApi.getAttractions]");
-    console.log("[1] locationId:", locationId, "| includeInactive:", includeInactive);
-
-    if (!locationId) {
-      console.warn("[2] Không có locationId → trả mảng rỗng, không gọi API.");
-      console.groupEnd();
-      return [];
-    }
+    if (!locationId) return [];
 
     const path = `/lookup/attractions?locationId=${locationId}&includeInactive=${
       includeInactive ? "true" : "false"
     }`;
-    console.log("[3] API path:", path);
 
     try {
       const payload = await apiFetch(path);
-      const items = payload?.data?.items || [];
-      console.log("[4] Số điểm tham quan nhận được:", items.length);
-      console.log("[5] Item đầu tiên:", items[0] || null);
-      return items;
+      return payload?.data?.items || [];
     } catch (error) {
-      console.error("[ERROR] getAttractions thất bại:", {
-        message: error.message,
-        status: error.status,
-        errorCode: error.errorCode,
-      });
+      logLookupError("getAttractions", error);
       throw error;
-    } finally {
-      console.groupEnd();
     }
   },
 };

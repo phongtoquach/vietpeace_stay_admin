@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { ArrowUpDown, ArrowUp, ArrowDown, Inbox } from 'lucide-react';
 
 export default function DataTable({
@@ -15,17 +15,6 @@ export default function DataTable({
   emptyMessage = "Không tìm thấy dữ liệu phù hợp.",
   emptyAction
 }) {
-  // Log một lần mỗi khi trạng thái hiển thị đổi, để theo dõi luồng
-  // props → render → DOM mà không làm nhiễu console theo từng ô.
-  useEffect(() => {
-    console.log(
-      '[DataTable] Trạng thái hiển thị:',
-      loading
-        ? `loading — vẽ ${skeletonRows} dòng skeleton cho ${columns.length} cột`
-        : `${data.length} dòng dữ liệu thật`
-    );
-  }, [loading, skeletonRows, columns.length, data.length]);
-
   const handleSort = (field) => {
     if (!onSort) return;
     if (sortField === field) {
