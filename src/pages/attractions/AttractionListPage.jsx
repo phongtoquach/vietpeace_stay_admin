@@ -433,7 +433,10 @@ export default function AttractionListPage() {
                 ) : (
                   paginatedAttractions.map((att) => {
                     const linked = getLinkedAccommodations(att.id);
-                    const imageSrc = att.image || resortDanangImg;
+                    const rawImg = att.image_url || att.image;
+                    const imageSrc = rawImg
+                      ? (rawImg.startsWith("http") || rawImg.startsWith("data:") ? rawImg : "http://localhost:3002" + rawImg)
+                      : resortDanangImg;
 
                     return (
                       <tr key={att.id} style={{ opacity: att.is_active ? 1 : 0.75 }}>
@@ -460,7 +463,7 @@ export default function AttractionListPage() {
                               }}
                               referrerPolicy="no-referrer"
                             />
-                            {!att.image && (
+                            {!rawImg && (
                               <div
                                 style={{
                                   position: 'absolute',

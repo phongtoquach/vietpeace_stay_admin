@@ -40,6 +40,42 @@ export default function LocationFormModal({
   const [imagePreview, setImagePreview] = useState(null);
   const [error, setError] = useState('');
 
+  // Ngăn chặn chọn chính nó hoặc con cháu làm cha để tránh vòng lặp phân cấp
+  const descendantIds = useMemo(() => {
+    if (!locationToEdit) return new Set();
+    const set = new Set([locationToEdit.id]);
+    let added = true;
+    while (added) {
+      added = false;
+      locations.forEach((loc) => {
+        if (loc.parent_location_id && set.has(loc.parent_location_id) && !set.has(loc.id)) {
+          set.add(loc.id);
+          added = true;
+        }
+      });
+    }
+    return set;
+  }, [locationToEdit, locations]);
+
+  // Danh sách Tỉnh / Thành phố gốc (chỉ lấy các điểm đến cấp 1 không có parent_location_id)
+  const rootProvinceOptions = useMemo(() => {
+    return locations
+      .filter((l) => !l.parent_location_id && !descendantIds.has(l.id))
+      .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'vi'))
+      .map((p) => ({
+        value: p.id,
+        label: p.name || 'Không có tên'
+      }));
+  }, [locations, descendantIds]);
+
+  // Tên tỉnh/thành phố cha đã chọn
+  const selectedProvinceName = useMemo(() => {
+    if (!formData.parent_location_id) return '';
+    const found = locations.find((l) => Number(l.id) === Number(formData.parent_location_id));
+    return found ? found.name : '';
+  }, [formData.parent_location_id, locations]);
+
+  // Khởi tạo & đồng bộ form khi mở modal
   useEffect(() => {
     if (!isOpen) return;
 
@@ -61,16 +97,22 @@ export default function LocationFormModal({
         image: existingImg
       });
     } else if (parentLocationIdForChild) {
+      // Khi nhấn nút "+ Thêm cấp con" từ một dòng trên bảng
       setImagePreview(null);
+      const parentObj = locations.find((l) => l.id === Number(parentLocationIdForChild));
+      // Nếu dòng được click là cấp con thì lấy tỉnh cha của nó, ngược lại lấy chính nó
+      const targetParentId = parentObj && parentObj.parent_location_id ? parentObj.parent_location_id : parentLocationIdForChild;
+
       setFormData({
         name: '',
         code: '',
-        parent_location_id: parentLocationIdForChild,
+        parent_location_id: targetParentId,
         description: '',
         status: 'Active',
         image: ''
       });
     } else {
+      // Thêm mới hoàn toàn từ nút "+ Thêm điểm đến"
       setImagePreview(null);
       setFormData({
         name: '',
@@ -81,29 +123,9 @@ export default function LocationFormModal({
         image: ''
       });
     }
+
     setError('');
-  }, [locationToEdit, parentLocationIdForChild, isOpen]);
-
-  // Ngăn chặn chọn chính nó hoặc con cháu làm cha
-  const descendantIds = useMemo(() => {
-    if (!locationToEdit) return new Set();
-    const set = new Set([locationToEdit.id]);
-    let added = true;
-    while (added) {
-      added = false;
-      locations.forEach((loc) => {
-        if (loc.parent_location_id && set.has(loc.parent_location_id) && !set.has(loc.id)) {
-          set.add(loc.id);
-          added = true;
-        }
-      });
-    }
-    return set;
-  }, [locationToEdit, locations]);
-
-  const availableParents = useMemo(() => {
-    return locations.filter((loc) => !descendantIds.has(loc.id));
-  }, [locations, descendantIds]);
+  }, [locationToEdit, parentLocationIdForChild, isOpen, locations]);
 
   // Xử lý khi chọn file ảnh từ máy tính
   const handleFileChange = (e) => {
@@ -134,7 +156,6 @@ export default function LocationFormModal({
 
   const handleNameChange = (val) => {
     setFormData((prev) => {
-      // Tự động gợi ý mã slug nếu đang tạo mới và chưa tự gõ slug tùy chỉnh
       const autoCode = !isEdit && (!prev.code || prev.code === generateSlug(prev.name))
         ? generateSlug(val)
         : prev.code;
@@ -146,8 +167,6 @@ export default function LocationFormModal({
     });
   };
 
-  if (!isOpen) return null;
-
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!formData.name.trim()) {
@@ -158,15 +177,26 @@ export default function LocationFormModal({
       setError('Vui lòng nhập mã định danh điểm đến.');
       return;
     }
+
     setError('');
+
+    const parentId = formData.parent_location_id ? Number(formData.parent_location_id) : null;
+    let provId = null;
+    if (parentId) {
+      const parentObj = locations.find((l) => l.id === parentId);
+      provId = parentObj?.province_id || parentObj?.id;
+    }
 
     const payload = {
       ...formData,
-      parent_location_id: formData.parent_location_id ? Number(formData.parent_location_id) : null
+      parent_location_id: parentId,
+      province_id: provId
     };
 
     onSave(payload);
   };
+
+  if (!isOpen) return null;
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -203,7 +233,7 @@ export default function LocationFormModal({
                 label="Tên điểm đến"
                 value={formData.name}
                 onChange={(e) => handleNameChange(e.target.value)}
-                placeholder="Ví dụ: Bán đảo Sơn Trà, Đà Nẵng, Phú Quốc..."
+                placeholder="Ví dụ: Bán đảo Sơn Trà, Châu Đốc, Tri Tôn..."
                 required
               />
 
@@ -215,16 +245,18 @@ export default function LocationFormModal({
                 required
               />
 
+              {/* Ô chọn duy nhất: Điểm đến cha (Cấp tỉnh / thành phố) */}
               <FormSelect
-                label="Điểm đến"
+                label="Điểm đến cha (Cấp tỉnh / thành phố)"
                 value={formData.parent_location_id}
                 onChange={(e) => setFormData({ ...formData, parent_location_id: e.target.value })}
                 placeholder="-- Không có (Điểm đến gốc / Cấp tỉnh, thành phố) --"
-                options={availableParents.map((p) => ({
-                  value: p.id,
-                  label: p.name
-                }))}
-                helperText="Ngăn ngừa vòng lặp phân cấp: điểm đến hiện tại và các cấp con trực thuộc bị vô hiệu hóa."
+                options={rootProvinceOptions}
+                helperText={
+                  !formData.parent_location_id
+                    ? "Nếu không chọn, điểm đến vừa nhập ở trên mặc định sẽ là Điểm đến gốc (Cấp Tỉnh / Thành phố)."
+                    : `Điểm đến vừa nhập ở trên sẽ là cấp con trực thuộc ${selectedProvinceName}.`
+                }
               />
 
               <FormSelect
