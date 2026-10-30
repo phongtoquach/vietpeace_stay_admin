@@ -7,7 +7,7 @@ import { useAdmin } from '../../context/AdminContext.jsx';
 import { Hotel, Eye, EyeOff } from 'lucide-react';
 
 export default function LoginPage() {
-	const { setCurrentLoggedInUser } = useContext(AuthContext);
+	//const { setCurrentLoggedInUser } = useContext(AuthContext);
 
 	const [email, setEmail] = useState('');
 	const [password, setPassword] = useState('');
@@ -18,8 +18,8 @@ export default function LoginPage() {
 
 	console.log("[LoginPage] Day là ngay trước dòng khai báo biến useState formData !");
     const [formData, setFormData] = useState({
-        email: "phongqt.admin@example.com",
-        password: "phongqt393699"
+        email: "",
+        password: ""
     });
 
     console.log("[LoginPage] Day là ngay trước dòng khai báo biến useState formErrors !");
@@ -146,7 +146,7 @@ export default function LoginPage() {
 		}
 
 		console.log("[LoginPage - handleSubmit] response_data.success = true ! Chuyen den route /admin/dashboard !");
-		if (setCurrentLoggedInUser) setCurrentLoggedInUser(response_data.data.loginUserData || response_data.data.userInfo);
+		//setCurrentLoggedInUser(response_data.data.loginUserData);
 
 		navigate('/admin/dashboard');
 	};
@@ -155,24 +155,20 @@ export default function LoginPage() {
 		<div className="auth-page">
 			<div className="auth-card">
 				<div className="auth-brand">
-				<div className="brand-icon-box" style={{ width: '38px', height: '38px' }}>
-					<Hotel size={22} strokeWidth={2.2} />
-				</div>
-				<div style={{ textAlign: 'left' }}>
-					<div style={{ fontSize: '17px', fontWeight: 700, color: '#292D32' }}>
-					VietPeace Stay
+					<div className="brand-icon-box" style={{ width: '38px', height: '38px' }}>
+						<Hotel size={22} strokeWidth={2.2} />
 					</div>
-					<div style={{ fontSize: '11px', color: '#6B7280' }}>
-					HỆ THỐNG QUẢN TRỊ NGHỈ DƯỠNG
+					<div style={{ textAlign: 'left' }}>
+						<div style={{ fontSize: '17px', fontWeight: 700, color: '#292D32' }}>
+						VietPeace Stay
+						</div>
+						<div style={{ fontSize: '11px', color: '#6B7280' }}>
+						HỆ THỐNG QUẢN TRỊ NGHỈ DƯỠNG
+						</div>
 					</div>
-				</div>
 				</div>
 
-				<div style={{ padding: '10px 14px', backgroundColor: '#FEFBE8', border: '1px solid #FDE68A', borderRadius: '6px', fontSize: '12px', color: '#92400E', marginBottom: '16px' }}>
-					<strong>Tài khoản mẫu thử nghiệm:</strong><br />
-					Email: <code>phongqt.admin@example.com</code><br />
-					Mật khẩu: <code>phongqt393699</code>
-				</div>
+				
 				<h1 className="auth-title">Cổng thông tin quản trị</h1>
 				<p className="auth-subtitle">
 				Đăng nhập bằng tài khoản nhân sự nội bộ để quản lý đặt phòng và các cơ sở lưu trú.
