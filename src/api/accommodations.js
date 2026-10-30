@@ -173,6 +173,34 @@ export const accommodationsApi = {
   },
 
   /** Lấy chi tiết một accommodation theo id. */
+  async update(id, data) {
+    console.group("[accommodationsApi.update]");
+    console.log("[1] ID cập nhật:", id);
+    console.log("[2] Payload gửi backend:", data);
+
+    try {
+      const payload = await apiFetch(`/accommodations/${id}`, {
+        method: "PUT",
+        body: JSON.stringify(data),
+      });
+      console.log("[3] Cập nhật thành công:", {
+        id: payload.data?.id,
+        name: payload.data?.name,
+      });
+      return payload.data;
+    } catch (error) {
+      console.error("[ERROR] Cập nhật thất bại:", {
+        message: error.message,
+        status: error.status,
+        errorCode: error.errorCode,
+        errors: error.errors,
+      });
+      throw error;
+    } finally {
+      console.groupEnd();
+    }
+  },
+
   async getDetail(id) {
     console.group("[accommodationsApi.getDetail]");
     console.log("[1] ID nhận từ DetailPage:", id);

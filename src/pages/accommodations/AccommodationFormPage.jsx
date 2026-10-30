@@ -7,6 +7,7 @@ import FormSelect from '../../components/forms/FormSelect.jsx';
 import FormTextarea from '../../components/forms/FormTextarea.jsx';
 import ImageUpload from '../../components/forms/ImageUpload.jsx';
 import { lookupsApi } from '../../api/lookups.js';
+import { accommodationsApi } from '../../api/accommodations.js';
 import {
   ArrowLeft,
   Save,
@@ -35,11 +36,44 @@ const getProvinceOfLocation = (locationId, locations = []) => {
   return { id: Number(loc.provinceId), name: loc.provinceName };
 };
 
+function getStatusValue(status) {
+  if (typeof status === 'number') return status;
+
+  const normalized = String(status || '').toLowerCase();
+  if (normalized === 'bản nháp' || normalized === 'draft') return 0;
+  if (normalized === 'đang hoạt động' || normalized === 'active') return 1;
+  if (normalized === 'ngừng hoạt động' || normalized === 'inactive') return 2;
+
+  return 0;
+}
+
+function toApiGeneralPayload(formData) {
+  return {
+    name: formData.name,
+    typeId: Number(formData.type_id),
+    status: getStatusValue(formData.status),
+    locationId: Number(formData.location_id),
+    wardId: formData.ward_id ? Number(formData.ward_id) : null,
+    addressLine: formData.address || null,
+    shortDescription: formData.short_description || null,
+    description: formData.full_description || null,
+    phone: formData.phone || null,
+    email: formData.email || null,
+    websiteUrl: formData.website || null,
+    latitude: formData.latitude === '' ? null : Number(formData.latitude),
+    longitude: formData.longitude === '' ? null : Number(formData.longitude),
+    starRating: formData.star_rating === '' ? null : Number(formData.star_rating),
+    checkInTime: formData.checkin_time || null,
+    checkOutTime: formData.checkout_time || null,
+    isFeatured: Boolean(formData.featured),
+  };
+}
+
 export default function AccommodationFormPage() {
   const { id } = useParams();
   const isEdit = Boolean(id);
   const navigate = useNavigate();
-  const { accommodations, addAccommodation, updateAccommodation } = useAdmin();
+  const { addAccommodation, updateAccommodation } = useAdmin();
 
   // Active form section tab (4 tabs total, NO separate attraction tab)
   const [activeTab, setActiveTab] = useState('general');
@@ -81,23 +115,93 @@ export default function AccommodationFormPage() {
   const [lookupError, setLookupError] = useState(null);
   const [isLoadingLookups, setIsLoadingLookups] = useState(false);
 
-  // Populate data when in edit mode without triggering user location change wiping
+  // Form Sửa phải đọc detail thật vì list chỉ có summary và AdminContext còn giữ mock.
   useEffect(() => {
-    if (isEdit) {
-      const existing = accommodations.find((a) => a.id === Number(id));
-      if (existing) {
-        setFormData({
-          ...existing,
-          ward_id: existing.ward_id ?? existing.ward?.id ?? '',
-          ward: typeof existing.ward === 'string' ? existing.ward : existing.ward?.name || '',
-          cover_image: existing.cover_image || resortDanangImg,
-          gallery_images: existing.gallery_images || [existing.cover_image || resortDanangImg],
-          amenity_ids: existing.amenity_ids || [],
-          attractions: existing.attractions || []
+    if (!isEdit) return;
+
+    let cancelled = false;
+
+    async function loadAccommodationDetail() {
+      console.group('[AccommodationFormPage] Tải detail để sửa');
+      console.log('[1] ID cần tải:', id);
+
+      try {
+        const payload = await accommodationsApi.getDetail(id);
+
+        if (cancelled) {
+          console.log('[2] Component đã unmount, bỏ qua dữ liệu detail.');
+          return;
+        }
+
+        const detail = payload.data;
+        const images = detail.images || [];
+        const mappedFormData = {
+          name: detail.name || '',
+          code: detail.code || '',
+          type_id: detail.type?.id || '',
+          type: detail.type?.name || detail.type?.code || '',
+          short_description: detail.shortDescription || '',
+          full_description: detail.description || '',
+          address: detail.addressLine || '',
+          location_id: detail.location?.id || '',
+          ward_id: detail.ward?.id || '',
+          ward: detail.ward?.name || '',
+          latitude: detail.latitude ?? '',
+          longitude: detail.longitude ?? '',
+          phone: detail.phone || '',
+          email: detail.email || '',
+          website: detail.websiteUrl || '',
+          checkin_time: detail.checkInTime || '14:00',
+          checkout_time: detail.checkOutTime || '12:00',
+          star_rating: detail.starRating ?? '',
+          status: detail.statusLabel || '',
+          featured: Boolean(detail.isFeatured),
+          cover_image: detail.coverImageUrl || '',
+          gallery_images: images
+            .filter((image) => !image.isCover)
+            .map((image) => image.imageUrl),
+          amenity_ids: (detail.amenities || []).map(
+            (amenity) => amenity.amenityId || amenity.id,
+          ),
+          attractions: (detail.attractions || []).map((attraction) => ({
+            attraction_id: attraction.attractionId,
+            distance_meters: attraction.distanceMeters || 0,
+            distance_unit: 'm',
+            distance: attraction.distanceMeters || 0,
+            notes: attraction.note || '',
+          })),
+        };
+
+        console.log('[2] Detail nhận từ API:', {
+          id: detail.id,
+          name: detail.name,
+          images: images.length,
+          amenities: mappedFormData.amenity_ids.length,
+          attractions: mappedFormData.attractions.length,
         });
+        setFormData(mappedFormData);
+        console.log('[3] Đã nạp detail vào form.');
+      } catch (error) {
+        if (!cancelled) {
+          console.error('[ERROR] Không tải được detail để sửa:', {
+            message: error.message,
+            status: error.status,
+            errorCode: error.errorCode,
+          });
+          setErrors({ form: error.message });
+        }
+      } finally {
+        console.log('[4] Kết thúc tải detail để sửa.');
+        console.groupEnd();
       }
     }
-  }, [id, isEdit, accommodations]);
+
+    loadAccommodationDetail();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [id, isEdit]);
 
   // Điểm đến + tiện nghi: chỉ cần nạp một lần khi mở form.
   useEffect(() => {
@@ -270,40 +374,28 @@ export default function AccommodationFormPage() {
     }
   };
 
-  // Location selection change handler with safety check & confirmation
+  // Đổi điểm đến không hỏi xác nhận; dữ liệu phụ thuộc sẽ được nạp lại tự động.
   const handleLocationChange = (e) => {
     const newLocationId = e.target.value;
     const newIdStr = String(newLocationId);
     if (newIdStr === String(formData.location_id)) return;
 
-    // Check if attractions are already linked or have edits
-    const hasLinkedAttractions = (formData.attractions || []).length > 0;
-    if (hasLinkedAttractions) {
-      const confirmed = window.confirm(
-        'Bạn có chắc chắn muốn thay đổi điểm đến? Danh sách các điểm tham quan đã chọn cho điểm đến hiện tại sẽ bị xóa để tải theo điểm đến mới.'
-      );
-      if (!confirmed) {
-        return; // Retain previous selection
-      }
-    }
-
-    // So sánh tỉnh/thành của điểm đến cũ và mới.
-    const oldProv = getProvinceOfLocation(formData.location_id, lookupLocations);
-    const newProv = getProvinceOfLocation(newLocationId, lookupLocations);
-    const isSameProvince = Boolean(oldProv && newProv && oldProv.id === newProv.id);
-
     setFormData((prev) => ({
       ...prev,
       location_id: newLocationId,
-      // Đổi tỉnh/thành thì phường/xã cũ không còn hợp lệ → xoá.
-      ward_id: isSameProvince ? prev.ward_id : '',
-      ward: isSameProvince ? prev.ward : '',
-      // Clear attractions belonging to previous location
+      // Điểm đến đổi thì reset phường/xã vì có thể khác tỉnh.
+      ward_id: '',
+      ward: '',
       attractions: []
     }));
 
-    if (errors.location_id) {
-      setErrors((prev) => ({ ...prev, location_id: null }));
+    if (errors.location_id || errors.ward_id || errors.wardId) {
+      setErrors((prev) => ({
+        ...prev,
+        location_id: null,
+        ward_id: null,
+        wardId: null,
+      }));
     }
   };
 
@@ -316,6 +408,12 @@ export default function AccommodationFormPage() {
       ...prev,
       ward_id: wardId,
       ward: selected ? selected.name : ''
+    }));
+
+    setErrors((prev) => ({
+      ...prev,
+      ward_id: null,
+      wardId: null,
     }));
   };
 
@@ -382,32 +480,67 @@ export default function AccommodationFormPage() {
     });
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    console.group('[AccommodationFormPage] Lưu form');
+    console.log('[1] Chế độ lưu:', isEdit ? 'update thật' : 'create mock');
 
-    const payload = {
-      ...formData,
-      location_id: Number(formData.location_id),
-      ward_id: formData.ward_id ? Number(formData.ward_id) : null,
-      star_rating: Number(formData.star_rating),
-      attractions: (formData.attractions || []).map((a) => ({
-        attraction_id: Number(a.attraction_id),
-        distance: Number(a.distance) || 0,
-        distance_unit: a.distance_unit || 'km',
-        distance_meters:
-          (a.distance_unit || 'km') === 'km'
-            ? Math.round((Number(a.distance) || 0) * 1000)
-            : Math.round(Number(a.distance) || 0),
-        notes: (a.notes || '').trim()
-      }))
-    };
+    const clientErrors = {};
+    if (!String(formData.address || '').trim()) {
+      clientErrors.address = 'Vui lòng nhập địa chỉ.';
+    }
+    if (!formData.ward_id) {
+      clientErrors.ward_id = 'Vui lòng chọn phường/xã.';
+    }
+    if (Object.keys(clientErrors).length > 0) {
+      console.warn('[2] Dữ liệu form chưa đủ:', clientErrors);
+      setErrors((prev) => ({ ...prev, ...clientErrors }));
+      console.groupEnd();
+      return;
+    }
 
-    if (isEdit) {
-      updateAccommodation(id, payload);
-      navigate(`/admin/accommodations/${id}`);
-    } else {
-      const created = addAccommodation(payload);
-      navigate(`/admin/accommodations/${created.id}`);
+    const payload = isEdit
+      ? toApiGeneralPayload(formData)
+      : {
+          ...formData,
+          location_id: Number(formData.location_id),
+          ward_id: formData.ward_id ? Number(formData.ward_id) : null,
+          star_rating: Number(formData.star_rating),
+          attractions: (formData.attractions || []).map((a) => ({
+            attraction_id: Number(a.attraction_id),
+            distance: Number(a.distance) || 0,
+            distance_unit: a.distance_unit || 'km',
+            distance_meters:
+              (a.distance_unit || 'km') === 'km'
+                ? Math.round(Number(a.distance) * 1000)
+                : Math.round(Number(a.distance) || 0),
+            notes: (a.notes || '').trim()
+          }))
+        };
+
+    console.log('[2] Payload chuẩn bị gửi:', payload);
+
+    try {
+      if (isEdit) {
+        await accommodationsApi.update(id, payload);
+        console.log('[3] PUT thật hoàn tất, chuyển tới detail.');
+        navigate(`/admin/accommodations/${id}`);
+      } else {
+        const created = addAccommodation(payload);
+        console.log('[3] Create vẫn đang dùng mock:', created.id);
+        navigate(`/admin/accommodations/${created.id}`);
+      }
+    } catch (error) {
+      console.error('[ERROR] Lưu form thất bại:', {
+        message: error.message,
+        status: error.status,
+        errorCode: error.errorCode,
+        errors: error.errors,
+      });
+      setErrors(error.errors || { form: error.message });
+    } finally {
+      console.log('[4] Kết thúc luồng lưu form.');
+      console.groupEnd();
     }
   };
 
@@ -766,6 +899,11 @@ export default function AccommodationFormPage() {
                           </option>
                         )}
                     </select>
+                    {errors.ward_id && (
+                      <span style={{ color: '#B91C1C', fontSize: '12px', marginTop: '4px', display: 'block' }}>
+                        {errors.ward_id}
+                      </span>
+                    )}
                     <span style={{ fontSize: '11.5px', color: '#6B7280', marginTop: '4px', display: 'block' }}>
                       Danh sách phường/xã phụ thuộc vào Tỉnh/thành của điểm đến đã chọn.
                     </span>
