@@ -155,19 +155,20 @@ export default function LoginPage() {
 		<div className="auth-page">
 			<div className="auth-card">
 				<div className="auth-brand">
-				<div className="brand-icon-box" style={{ width: '38px', height: '38px' }}>
-					<Hotel size={22} strokeWidth={2.2} />
-				</div>
-				<div style={{ textAlign: 'left' }}>
-					<div style={{ fontSize: '17px', fontWeight: 700, color: '#292D32' }}>
-					VietPeace Stay
+					<div className="brand-icon-box" style={{ width: '38px', height: '38px' }}>
+						<Hotel size={22} strokeWidth={2.2} />
 					</div>
-					<div style={{ fontSize: '11px', color: '#6B7280' }}>
-					HỆ THỐNG QUẢN TRỊ NGHỈ DƯỠNG
+					<div style={{ textAlign: 'left' }}>
+						<div style={{ fontSize: '17px', fontWeight: 700, color: '#292D32' }}>
+						VietPeace Stay
+						</div>
+						<div style={{ fontSize: '11px', color: '#6B7280' }}>
+						HỆ THỐNG QUẢN TRỊ NGHỈ DƯỠNG
+						</div>
 					</div>
-				</div>
 				</div>
 
+				
 				<h1 className="auth-title">Cổng thông tin quản trị</h1>
 				<p className="auth-subtitle">
 				Đăng nhập bằng tài khoản nhân sự nội bộ để quản lý đặt phòng và các cơ sở lưu trú.

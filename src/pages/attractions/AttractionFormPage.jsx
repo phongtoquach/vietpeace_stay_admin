@@ -81,15 +81,15 @@ export default function AttractionFormPage() {
   // Hierarchical location options
   const locationOptions = useMemo(() => {
     const list = [];
-    const provinces = locations.filter((l) => l.type === 'Province / City');
-    provinces.forEach((prov) => {
-      list.push({ value: String(prov.id), label: `Tỉnh/thành: ${prov.name}` });
-      const children = locations.filter((l) => l.parent_location_id === prov.id);
+    const roots = locations.filter((l) => !l.parent_location_id);
+    roots.forEach((root) => {
+      list.push({ value: String(root.id), label: root.name });
+      const children = locations.filter((l) => l.parent_location_id === root.id);
       children.forEach((child) => {
-        list.push({ value: String(child.id), label: `  ↳ ${child.name} (${child.type})` });
+        list.push({ value: String(child.id), label: `  ↳ ${child.name}` });
         const grandChildren = locations.filter((l) => l.parent_location_id === child.id);
         grandChildren.forEach((gc) => {
-          list.push({ value: String(gc.id), label: `      ↳ ${gc.name} (${gc.type})` });
+          list.push({ value: String(gc.id), label: `      ↳ ${gc.name}` });
         });
       });
     });
@@ -97,7 +97,7 @@ export default function AttractionFormPage() {
     const listedIds = new Set(list.map((item) => String(item.value)));
     locations.forEach((loc) => {
       if (!listedIds.has(String(loc.id))) {
-        list.push({ value: String(loc.id), label: `${loc.name} (${loc.type})` });
+        list.push({ value: String(loc.id), label: loc.name });
       }
     });
 

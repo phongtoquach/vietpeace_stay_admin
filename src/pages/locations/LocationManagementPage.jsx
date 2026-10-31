@@ -20,6 +20,20 @@ import {
   Building
 } from 'lucide-react';
 
+// Hàm chuẩn hóa chuỗi: bỏ dấu tiếng Việt, chuyển chữ thường và đổi gạch nối '-' thành khoảng trắng
+const normalizeText = (str) => {
+  if (!str) return '';
+  return str
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D')
+    .toLowerCase()
+    .replace(/[-_]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+};
+
 export default function LocationManagementPage() {
   const { locations, accommodations, addLocation, updateLocation, deleteLocation } = useAdmin();
 
@@ -28,12 +42,11 @@ export default function LocationManagementPage() {
 
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
-  const [typeFilter, setTypeFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [parentFilter, setParentFilter] = useState('');
 
   // Expand / collapse map for tree nodes
-  const [expandedNodes, setExpandedNodes] = useState({ 1: true, 2: true, 6: true, 9: true, 13: true, 17: true });
+  const [expandedNodes, setExpandedNodes] = useState({ 4: true, 14: true, 31: true, 1: true, 2: true });
 
   // Modal State
   const [modalOpen, setModalOpen] = useState(false);
@@ -93,19 +106,43 @@ export default function LocationManagementPage() {
     }
   };
 
-  // Filtered locations for search/filter
-  const filteredFlatLocations = useMemo(() => {
-    return locations.filter((loc) => {
+  // Sắp xếp danh sách điểm đến theo thứ tự phân cấp (Cha đứng trước, các Con thụt lề đứng ngay sau)
+  const hierarchicalLocations = useMemo(() => {
+    const buildHierarchy = (items, parentId = null, depth = 0) => {
+      let result = [];
+      const children = items.filter((item) => item.parent_location_id === parentId);
+      children.sort((a, b) => a.name.localeCompare(b.name, 'vi'));
+      for (const child of children) {
+        result.push({ ...child, depth });
+        result = result.concat(buildHierarchy(items, child.id, depth + 1));
+      }
+      return result;
+    };
+
+    const ordered = buildHierarchy(locations, null, 0);
+
+    // Bổ sung các điểm đến chưa nằm trong cây (dự phòng)
+    const listedIds = new Set(ordered.map((l) => l.id));
+    locations.forEach((l) => {
+      if (!listedIds.has(l.id)) {
+        ordered.push({ ...l, depth: 0 });
+      }
+    });
+
+    // Lọc theo từ khóa tìm kiếm và trạng thái
+    return ordered.filter((loc) => {
+      const normSearch = normalizeText(searchTerm);
       const matchSearch =
         !searchTerm ||
-        loc.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        loc.code.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchType = !typeFilter || loc.type === typeFilter;
+        normalizeText(loc.name).includes(normSearch) ||
+        normalizeText(loc.code).includes(normSearch) ||
+        normalizeText(loc.province_name).includes(normSearch);
+
       const matchStatus = !statusFilter || loc.status === statusFilter;
       const matchParent = !parentFilter || String(loc.parent_location_id) === String(parentFilter);
-      return matchSearch && matchType && matchStatus && matchParent;
+      return matchSearch && matchStatus && matchParent;
     });
-  }, [locations, searchTerm, typeFilter, statusFilter, parentFilter]);
+  }, [locations, searchTerm, statusFilter, parentFilter]);
 
   // Build recursive tree nodes
   const buildTree = (parentId = null) => {
@@ -126,13 +163,11 @@ export default function LocationManagementPage() {
     const accCount = accCountMap[node.id] || 0;
 
     // Filter check if searching in tree view
-    const isSearchActive = searchTerm || typeFilter || statusFilter;
+    const isSearchActive = searchTerm || statusFilter;
+    const normSearch = normalizeText(searchTerm);
     const matchesFilter =
-      (!searchTerm || node.name.toLowerCase().includes(searchTerm.toLowerCase()) || node.code.toLowerCase().includes(searchTerm.toLowerCase())) &&
-      (!typeFilter || node.type === typeFilter) &&
+      (!searchTerm || normalizeText(node.name).includes(normSearch) || normalizeText(node.code).includes(normSearch)) &&
       (!statusFilter || node.status === statusFilter);
-
-    const typeLabel = node.type === 'Province / City' ? 'Tỉnh/thành' : node.type === 'Country' ? 'Quốc gia' : node.type;
 
     return (
       <div key={node.id} className="tree-node">
@@ -166,15 +201,9 @@ export default function LocationManagementPage() {
             </span>
 
             <span className="tree-node-title">{node.name}</span>
-            <span style={{ fontSize: '11px', color: '#6B7280' }} className="code-badge">
-              ({node.code})
-            </span>
           </div>
 
           <div className="tree-node-meta">
-            <span className="badge badge-neutral" style={{ fontSize: '11px' }}>
-              {typeLabel}
-            </span>
 
             {accCount > 0 && (
               <span
@@ -241,67 +270,29 @@ export default function LocationManagementPage() {
     <div>
       <PageHeader
         title="Quản lý điểm đến phân cấp"
-        description="Hệ thống cơ sở dữ liệu địa lý đa cấp: Quốc gia, Tỉnh/thành, Quận/huyện, Phường/xã và Khu du lịch sinh thái."
+        description="Hệ thống cơ sở dữ liệu địa lý đa cấp: Tỉnh/thành phố và các khu vực, điểm đến trực thuộc."
         actions={
-          <div style={{ display: 'flex', gap: '8px' }}>
-            {/* View Mode Toggle */}
-            <div style={{ display: 'inline-flex', border: '1px solid #D9DDE2', borderRadius: '4px', overflow: 'hidden' }}>
-              <button
-                type="button"
-                onClick={() => setViewMode('tree')}
-                className={`btn btn-sm ${viewMode === 'tree' ? 'btn-primary' : 'btn-secondary'}`}
-                style={{ border: 'none', borderRadius: 0 }}
-              >
-                <Network size={13} /> Dạng cây
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewMode('table')}
-                className={`btn btn-sm ${viewMode === 'table' ? 'btn-primary' : 'btn-secondary'}`}
-                style={{ border: 'none', borderRadius: 0 }}
-              >
-                <TableIcon size={13} /> Dạng bảng
-              </button>
-            </div>
-
-            <button type="button" onClick={handleOpenCreateRoot} className="btn btn-primary">
-              <Plus size={15} /> Thêm điểm đến
-            </button>
-          </div>
+          <button type="button" onClick={handleOpenCreateRoot} className="btn btn-primary">
+            <Plus size={15} /> Thêm điểm đến
+          </button>
         }
       />
 
       {/* Toolbar & Filters */}
       <div className="filter-panel">
         <div className="filter-group filter-group-wide">
-          <label className="filter-label">Tìm kiếm tên hoặc mã điểm đến</label>
+          <label className="filter-label">Tìm kiếm tên điểm đến, tỉnh thành...</label>
           <div style={{ position: 'relative' }}>
             <input
               type="text"
               className="filter-input"
               style={{ width: '100%', paddingLeft: '28px' }}
-              placeholder="Ví dụ: Đà Nẵng, Sa Pa, Sơn Trà..."
+              placeholder="Ví dụ: Đà Nẵng, Sa Pa, Cà Mau, Nha Trang..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
             <Search size={14} style={{ position: 'absolute', left: '8px', top: '9px', color: '#6B7280' }} />
           </div>
-        </div>
-
-        <div className="filter-group">
-          <label className="filter-label">Loại điểm đến</label>
-          <select
-            className="filter-select"
-            value={typeFilter}
-            onChange={(e) => setTypeFilter(e.target.value)}
-          >
-            <option value="">Tất cả loại cấp bậc</option>
-            <option value="Country">Quốc gia</option>
-            <option value="Province / City">Tỉnh/thành</option>
-            <option value="Ward / District">Quận/huyện</option>
-            <option value="Ward / Commune">Phường/xã</option>
-            <option value="Tourism Area">Khu du lịch sinh thái</option>
-          </select>
         </div>
 
         <div className="filter-group">
@@ -323,7 +314,6 @@ export default function LocationManagementPage() {
             className="btn btn-secondary btn-sm"
             onClick={() => {
               setSearchTerm('');
-              setTypeFilter('');
               setStatusFilter('');
               setParentFilter('');
             }}
@@ -333,47 +323,14 @@ export default function LocationManagementPage() {
         </div>
       </div>
 
-      {/* View 1: Hierarchical Tree View */}
-      {viewMode === 'tree' ? (
-        <div className="admin-card">
-          <div className="admin-card-header">
-            <div className="admin-card-title">Cấu trúc cây địa lý</div>
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                onClick={() => {
-                  const allOpen = {};
-                  locations.forEach((l) => (allOpen[l.id] = true));
-                  setExpandedNodes(allOpen);
-                }}
-              >
-                Mở rộng tất cả
-              </button>
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                onClick={() => setExpandedNodes({})}
-              >
-                Thu gọn tất cả
-              </button>
-            </div>
-          </div>
-
-          <div className="location-tree" style={{ border: 'none' }}>
-            {rootNodes.map((root) => renderTreeNode(root, 0))}
-          </div>
-        </div>
-      ) : (
-        /* View 2: Flat Table View */
-        <div className="table-responsive">
+      {/* Bảng điểm đến phân cấp */}
+      <div className="table-responsive">
           <table className="data-table">
             <thead>
               <tr>
                 <th>ID</th>
                 <th>Tên điểm đến</th>
-                <th>Mã</th>
-                <th>Loại cấp bậc</th>
+                <th>Tỉnh / Thành phố</th>
                 <th>Điểm đến cha</th>
                 <th style={{ textAlign: 'center' }}>Cơ sở lưu trú</th>
                 <th>Trạng thái</th>
@@ -381,27 +338,44 @@ export default function LocationManagementPage() {
               </tr>
             </thead>
             <tbody>
-              {filteredFlatLocations.length === 0 ? (
+              {hierarchicalLocations.length === 0 ? (
                 <tr>
-                  <td colSpan={8} style={{ textAlign: 'center', padding: '30px' }}>
+                  <td colSpan={7} style={{ textAlign: 'center', padding: '30px' }}>
                     Không tìm thấy điểm đến nào phù hợp.
                   </td>
                 </tr>
               ) : (
-                filteredFlatLocations.map((loc) => {
+                hierarchicalLocations.map((loc) => {
                   const parent = locations.find((l) => l.id === loc.parent_location_id);
                   const count = accCountMap[loc.id] || 0;
                   return (
-                    <tr key={loc.id}>
+                    <tr 
+                      key={loc.id}
+                      style={{
+                        backgroundColor: loc.depth > 0 ? '#F9FAFB' : undefined
+                      }}
+                    >
                       <td className="code-badge">#{loc.id}</td>
-                      <td style={{ fontWeight: 600 }}>{loc.name}</td>
-                      <td className="code-badge">{loc.code}</td>
+                      <td style={{ fontWeight: loc.depth === 0 ? 600 : 500 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', paddingLeft: `${loc.depth * 24}px` }}>
+                          {loc.depth > 0 && (
+                            <span style={{ color: '#9CA3AF', marginRight: '6px', fontSize: '13px', fontWeight: 400 }}>↳</span>
+                          )}
+                          <span>{loc.name}</span>
+                        </div>
+                      </td>
                       <td>
-                        <span className="badge badge-neutral">
-                          {loc.type === 'Province / City' ? 'Tỉnh/thành' : loc.type}
+                        <span style={{ fontWeight: 500, color: '#374151' }}>
+                          {loc.province_name || (parent ? parent.province_name || parent.name : loc.name)}
                         </span>
                       </td>
-                      <td>{parent ? `${parent.name} (${parent.type === 'Province / City' ? 'Tỉnh/thành' : parent.type})` : '— (Cấp cao nhất)'}</td>
+                      <td>
+                        {parent ? (
+                          <span style={{ color: '#4B5563', fontSize: '12.5px' }}>{parent.name}</span>
+                        ) : (
+                          <span style={{ color: '#9CA3AF', fontSize: '12px', fontStyle: 'italic' }}>— (Cấp cao nhất)</span>
+                        )}
+                      </td>
                       <td style={{ textAlign: 'center' }}>
                         <span className="tabular-nums" style={{ fontWeight: 600 }}>
                           {count}
@@ -445,7 +419,6 @@ export default function LocationManagementPage() {
             </tbody>
           </table>
         </div>
-      )}
 
       {/* Location Create/Edit Modal */}
       <LocationFormModal

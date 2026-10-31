@@ -537,7 +537,7 @@ export default function RoomRatesPage() {
                   <option value="">-- Chọn điểm đến --</option>
                   {destinationOptions.map((loc) => (
                     <option key={loc.id} value={loc.id}>
-                      {loc.name} ({loc.type})
+                      {loc.name}
                     </option>
                   ))}
                 </select>

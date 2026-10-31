@@ -72,24 +72,25 @@ export default function AttractionListPage() {
   // Structured location options for dropdown
   const locationOptions = useMemo(() => {
     const list = [];
-    const provinces = locations.filter((l) => l.type === 'Province / City');
-    provinces.forEach((prov) => {
-      list.push({ id: prov.id, label: prov.name, isParent: true, type: prov.type });
-      const children = locations.filter((l) => l.parent_location_id === prov.id);
+    // Điểm đến gốc (Tỉnh / Thành phố: parent_location_id là null)
+    const roots = locations.filter((l) => !l.parent_location_id);
+    roots.forEach((root) => {
+      list.push({ id: root.id, label: root.name, isParent: true });
+      const children = locations.filter((l) => l.parent_location_id === root.id);
       children.forEach((child) => {
-        list.push({ id: child.id, label: `↳ ${child.name} (${child.type})`, isParent: false, type: child.type });
+        list.push({ id: child.id, label: `↳ ${child.name}`, isParent: false });
         const grandChildren = locations.filter((l) => l.parent_location_id === child.id);
         grandChildren.forEach((gc) => {
-          list.push({ id: gc.id, label: `    ↳ ${gc.name} (${gc.type})`, isParent: false, type: gc.type });
+          list.push({ id: gc.id, label: `    ↳ ${gc.name}`, isParent: false });
         });
       });
     });
 
-    // Add any remaining locations not in tree
+    // Điểm đến còn lại (nếu có)
     const listedIds = new Set(list.map((item) => item.id));
     locations.forEach((loc) => {
       if (!listedIds.has(loc.id)) {
-        list.push({ id: loc.id, label: `${loc.name} (${loc.type})`, isParent: false, type: loc.type });
+        list.push({ id: loc.id, label: loc.name, isParent: false });
       }
     });
 
@@ -263,7 +264,7 @@ export default function AttractionListPage() {
                 </span>
                 {selectedLocationObj && (
                   <span style={{ fontSize: '12.5px', color: '#6B7280' }}>
-                    Khu vực: <strong>{selectedLocationObj.name}</strong> ({selectedLocationObj.type})
+                    Khu vực: <strong>{selectedLocationObj.name}</strong>
                   </span>
                 )}
               </div>
@@ -432,7 +433,10 @@ export default function AttractionListPage() {
                 ) : (
                   paginatedAttractions.map((att) => {
                     const linked = getLinkedAccommodations(att.id);
-                    const imageSrc = att.image || resortDanangImg;
+                    const rawImg = att.image_url || att.image;
+                    const imageSrc = rawImg
+                      ? (rawImg.startsWith("http") || rawImg.startsWith("data:") ? rawImg : "http://localhost:3002" + rawImg)
+                      : resortDanangImg;
 
                     return (
                       <tr key={att.id} style={{ opacity: att.is_active ? 1 : 0.75 }}>
@@ -459,7 +463,7 @@ export default function AttractionListPage() {
                               }}
                               referrerPolicy="no-referrer"
                             />
-                            {!att.image && (
+                            {!rawImg && (
                               <div
                                 style={{
                                   position: 'absolute',
