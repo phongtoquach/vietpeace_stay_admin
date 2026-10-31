@@ -80,7 +80,7 @@ export default function LoginPage() {
             console.log("[validateForm] email không đúng email format ! set error msg !");
             newFormErrors.email = "Email không đúng định dạng";
         }
-        
+
 		// validate password
         let password = formData.password.trim();
         console.log("[validateForm] password : " + password);
@@ -103,7 +103,7 @@ export default function LoginPage() {
 
 	const handleSubmit = async (e) => {
 		e.preventDefault();
-		
+
 		console.log("[handleSubmit] Đang chạy hàm handleSubmit() !");
 
         const formIsValid = validateForm();
@@ -155,18 +155,19 @@ export default function LoginPage() {
 		<div className="auth-page">
 			<div className="auth-card">
 				<div className="auth-brand">
-				<div className="brand-icon-box" style={{ width: '38px', height: '38px' }}>
-					<Hotel size={22} strokeWidth={2.2} />
-				</div>
-				<div style={{ textAlign: 'left' }}>
-					<div style={{ fontSize: '17px', fontWeight: 700, color: '#292D32' }}>
-					VietPeace Stay
+					<div className="brand-icon-box" style={{ width: '38px', height: '38px' }}>
+						<Hotel size={22} strokeWidth={2.2} />
 					</div>
-					<div style={{ fontSize: '11px', color: '#6B7280' }}>
-					HỆ THỐNG QUẢN TRỊ NGHỈ DƯỠNG
+					<div style={{ textAlign: 'left' }}>
+						<div style={{ fontSize: '17px', fontWeight: 700, color: '#292D32' }}>
+						VietPeace Stay
+						</div>
+						<div style={{ fontSize: '11px', color: '#6B7280' }}>
+						HỆ THỐNG QUẢN TRỊ NGHỈ DƯỠNG
+						</div>
 					</div>
 				</div>
-				</div>
+
 
 				<h1 className="auth-title">Cổng thông tin quản trị</h1>
 				<p className="auth-subtitle">
@@ -186,7 +187,7 @@ export default function LoginPage() {
 							value={formData.email}
 							onChange={(e) => handleChangeInputValue(e)}
 							placeholder="ten@vietpeacestay.vn"/>
-						{ (formErrors.email) && 
+						{ (formErrors.email) &&
 							<span className="form-error-text">{formErrors.email}</span>
 						}
 					</div>
@@ -228,7 +229,7 @@ export default function LoginPage() {
 							>
 								{showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
 							</button>
-							{ (formErrors.password) && 
+							{ (formErrors.password) &&
 								<span className="form-error-text">{formErrors.password}</span>
 							}
 						</div>

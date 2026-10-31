@@ -17,20 +17,11 @@ export const INITIAL_USER = {
 
 export const INITIAL_LOCATIONS = [
   {
-    id: 1,
-    name: "Vietnam",
-    code: "VN",
-    type: "Country",
-    parent_location_id: null,
-    description: "National territory of Vietnam",
-    status: "Active"
-  },
-  {
     id: 2,
     name: "Da Nang",
     code: "VN-DAD",
     type: "Province / City",
-    parent_location_id: 1,
+    parent_location_id: null,
     description: "Central coastal economic and tourism hub",
     status: "Active"
   },
@@ -66,7 +57,7 @@ export const INITIAL_LOCATIONS = [
     name: "Hanoi",
     code: "VN-HAN",
     type: "Province / City",
-    parent_location_id: 1,
+    parent_location_id: null,
     description: "Capital city with thousand-year heritage",
     status: "Active"
   },
@@ -93,7 +84,7 @@ export const INITIAL_LOCATIONS = [
     name: "Lao Cai",
     code: "VN-LC",
     type: "Province / City",
-    parent_location_id: 1,
+    parent_location_id: null,
     description: "Northwest mountainous landscape and cultural trekking",
     status: "Active"
   },
@@ -129,7 +120,7 @@ export const INITIAL_LOCATIONS = [
     name: "Kien Giang",
     code: "VN-KG",
     type: "Province / City",
-    parent_location_id: 1,
+    parent_location_id: null,
     description: "Southwestern Gulf of Thailand territory",
     status: "Active"
   },
@@ -165,7 +156,7 @@ export const INITIAL_LOCATIONS = [
     name: "Lam Dong",
     code: "VN-LD",
     type: "Province / City",
-    parent_location_id: 1,
+    parent_location_id: null,
     description: "Central Highlands pine hills and flower capital",
     status: "Active"
   },
