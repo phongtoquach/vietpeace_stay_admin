@@ -1,23 +1,25 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom';
-import { useAdmin } from '../../context/AdminContext.jsx';
 import PageHeader from '../../components/common/PageHeader.jsx';
 import FormInput from '../../components/forms/FormInput.jsx';
 import FormSelect from '../../components/forms/FormSelect.jsx';
 import FormTextarea from '../../components/forms/FormTextarea.jsx';
-import { formatVND, DAYS_OF_WEEK } from '../../data/mockData.js';
-import resortDanangImg from '../../assets/images/resort_danang_1790825961463.jpg';
-import hotelHanoiImg from '../../assets/images/hotel_hanoi_1790825973601.jpg';
-import resortPhuquocImg from '../../assets/images/resort_phuquoc_1790825997319.jpg';
-import homestaySapaImg from '../../assets/images/homestay_sapa_1790825984612.jpg';
+import { formatVND } from '../../data/entities.js';
+import { DAYS_OF_WEEK } from '../../data/mockData.js';
+import {
+  roomTypesApi,
+  toRoomTypeWritePayload,
+  isLocalPreviewUrl,
+} from '../../api/roomTypes.js';
+import { useAdmin } from '../../context/AdminContext.jsx';
+import { accommodationsApi } from '../../api/accommodations.js';
+import { lookupsApi } from '../../api/lookups.js';
 import {
   ArrowLeft,
   Save,
-  Building,
   Image as ImageIcon,
   CheckCircle2,
   AlertCircle,
-  Plus,
   Trash2,
   X,
   UploadCloud,
@@ -49,21 +51,121 @@ const AMENITY_CATEGORY_LABELS = {
   'Services': 'Dịch vụ lưu trú'
 };
 
+const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
+
+function validateImageFile(file) {
+  if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) {
+    return 'Chỉ nhận ảnh JPG, PNG hoặc WEBP.';
+  }
+  if (file.size > MAX_IMAGE_SIZE) {
+    return 'Kích thước ảnh tối đa là 5MB.';
+  }
+  return null;
+}
+
+// Khi backend trả lỗi theo field, cần biết field đó nằm ở tab nào
+// để tự chuyển tab, tránh người dùng phải tự tìm.
+const FIELD_TAB_MAP = {
+  accommodation_id: 'general',
+  code: 'general',
+  name: 'general',
+  short_description: 'general',
+  description: 'general',
+  status: 'general',
+
+  room_size: 'capacity',
+  bed_type: 'capacity',
+  quantity: 'capacity',
+  bedroom_count: 'capacity',
+  bathroom_count: 'capacity',
+  included_adults: 'capacity',
+  included_children: 'capacity',
+  max_adults: 'capacity',
+  max_children: 'capacity',
+  max_occupancy: 'capacity',
+  base_price: 'capacity',
+  extra_adult_fee: 'capacity',
+  extra_child_fee: 'capacity',
+
+  weekday_rates: 'pricing',
+  amenity_ids: 'amenities',
+  room_image: 'media',
+  supplementary_images: 'media'
+};
+
+// Backend dùng camelCase, form dùng snake_case.
+const API_FIELD_TO_FORM_FIELD = {
+  accommodationId: 'accommodation_id',
+  code: 'code',
+  name: 'name',
+  shortDescription: 'short_description',
+  description: 'description',
+  quantity: 'quantity',
+  basePrice: 'base_price',
+  areaSqm: 'room_size',
+  bedDescription: 'bed_type',
+  bedroomCount: 'bedroom_count',
+  bathroomCount: 'bathroom_count',
+  includedAdults: 'included_adults',
+  includedChildren: 'included_children',
+  maxAdults: 'max_adults',
+  maxChildren: 'max_children',
+  maxOccupancy: 'max_occupancy',
+  extraAdultFee: 'extra_adult_fee',
+  extraChildFee: 'extra_child_fee',
+  status: 'status',
+  sortOrder: 'sort_order',
+  images: 'room_image',
+  amenities: 'amenity_ids',
+  weekdayRates: 'weekday_rates'
+};
+
+// DTO detail -> state form. Tách ra để dùng chung cho lúc mở trang Sửa
+// và lúc backend trả detail mới sau khi PUT.
+function detailToFormState(detail) {
+  return {
+    name: detail.name || '',
+    code: detail.code || '',
+    accommodation_id: detail.accommodationId ?? '',
+    short_description: detail.shortDescription || '',
+    description: detail.description || '',
+    status: detail.status ?? 0,
+    quantity: detail.quantity ?? 1,
+    room_size: detail.areaSqm ?? '',
+    bed_type: detail.bedDescription || '',
+    bedroom_count: detail.bedroomCount ?? 1,
+    bathroom_count: detail.bathroomCount ?? 1,
+    included_adults: detail.includedAdults ?? 1,
+    included_children: detail.includedChildren ?? 0,
+    max_adults: detail.maxAdults ?? 1,
+    max_children: detail.maxChildren ?? 0,
+    max_occupancy: detail.maxOccupancy ?? 1,
+    extra_adult_fee: detail.extraAdultFee ?? 0,
+    extra_child_fee: detail.extraChildFee ?? 0,
+    base_price: detail.basePrice ?? '',
+    sort_order: detail.sortOrder ?? 0,
+    amenity_ids: detail.amenityIds || [],
+    room_image: detail.coverImageUrl || '',
+    supplementary_images: detail.galleryImageUrls || []
+  };
+}
+
+function ratesToWeekdayState(rates = []) {
+  const next = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0 };
+  rates.forEach((rate) => {
+    next[rate.dayOfWeek] = rate.price;
+  });
+  return next;
+}
+
 export default function RoomTypeFormPage() {
   const { id } = useParams();
   const isEdit = Boolean(id);
   const [searchParams] = useSearchParams();
   const preselectedAccId = searchParams.get('accommodation_id');
   const navigate = useNavigate();
-
-  const {
-    roomTypes,
-    accommodations,
-    amenities,
-    addRoomType,
-    updateRoomType,
-    getRoomWeekdayRates
-  } = useAdmin();
+  const { showToast } = useAdmin();
 
   // 5 Tabs in exact required order
   const [activeTab, setActiveTab] = useState('general');
@@ -72,41 +174,42 @@ export default function RoomTypeFormPage() {
   const coverFileInputRef = useRef(null);
   const suppFileInputRef = useRef(null);
 
-  // Form State
+  // Form State — chỉ chứa field có trong DB room_types.
   const [formData, setFormData] = useState({
     name: '',
     code: '',
-    accommodation_id: preselectedAccId ? Number(preselectedAccId) : (accommodations[0]?.id || ''),
+    accommodation_id: preselectedAccId ? Number(preselectedAccId) : '',
+    short_description: '',
     description: '',
-    room_size: 40,
-    bed_type: '1 King Bed',
-    number_of_beds: 1,
+    status: 0,
+    quantity: 1,
+    room_size: '',
+    bed_type: '',
+    bedroom_count: 1,
+    bathroom_count: 1,
     included_adults: 2,
-    included_children: 1,
-    max_adults: 3,
-    max_children: 2,
-    max_occupancy: 4,
-    extra_adult_fee: 300000,
-    extra_child_fee: 150000,
-    base_price: 2500000,
-    view: 'Sea',
-    balcony: true,
+    included_children: 0,
+    max_adults: 2,
+    max_children: 0,
+    max_occupancy: 2,
+    extra_adult_fee: 0,
+    extra_child_fee: 0,
+    base_price: '',
+    sort_order: 0,
     amenity_ids: [],
-    amenities: [],
-    room_image: resortDanangImg,
-    supplementary_images: [],
-    status: 'Active'
+    room_image: '',
+    supplementary_images: []
   });
 
   // Weekday Rates state (day 1 to 7)
   const [weekdayRates, setWeekdayRates] = useState({
-    1: 2500000,
-    2: 2500000,
-    3: 2500000,
-    4: 2500000,
-    5: 2750000,
-    6: 2950000,
-    7: 2650000
+    1: 0,
+    2: 0,
+    3: 0,
+    4: 0,
+    5: 0,
+    6: 0,
+    7: 0
   });
 
   // Amenity filters
@@ -114,69 +217,125 @@ export default function RoomTypeFormPage() {
   const [amenitySearchTerm, setAmenitySearchTerm] = useState('');
 
   const [errors, setErrors] = useState({});
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoading, setIsLoading] = useState(isEdit);
   const [isNotFound, setIsNotFound] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [uploadingCount, setUploadingCount] = useState(0);
 
-  // Helper to map existing amenities to amenity_ids
-  const resolveAmenityIds = (existing, allAmenities) => {
-    if (Array.isArray(existing.amenity_ids) && existing.amenity_ids.length > 0) {
-      return existing.amenity_ids;
-    }
-    if (Array.isArray(existing.amenities)) {
-      const ids = [];
-      existing.amenities.forEach((item) => {
-        if (typeof item === 'number') {
-          ids.push(item);
-        } else if (typeof item === 'string') {
-          const found = allAmenities.find(
-            (a) => a.name.toLowerCase().trim() === item.toLowerCase().trim()
-          );
-          if (found) {
-            ids.push(found.id);
-          }
-        }
-      });
-      return ids;
-    }
-    return [];
-  };
+  // Dữ liệu danh mục lấy từ DB, không dùng mock context.
+  const [accommodationOptions, setAccommodationOptions] = useState([]);
+  const [amenityOptions, setAmenityOptions] = useState([]);
 
-  // Populate data when in edit mode
+  // Nạp cơ sở lưu trú cho dropdown.
   useEffect(() => {
-    if (isEdit) {
-      const existing = roomTypes.find((r) => r.id === Number(id));
-      if (existing) {
-        const resolvedAmenityIds = resolveAmenityIds(existing, amenities);
-        const resolvedSuppImages = Array.isArray(existing.supplementary_images)
-          ? existing.supplementary_images
-          : Array.isArray(existing.gallery_images)
-          ? existing.gallery_images
-          : [];
+    let cancelled = false;
 
-        setFormData({
-          ...existing,
-          amenity_ids: resolvedAmenityIds,
-          amenities: existing.amenities || [],
-          room_image: existing.room_image || resortDanangImg,
-          supplementary_images: resolvedSuppImages
+    (async () => {
+      try {
+        const payload = await accommodationsApi.getList({ page: 1, limit: 100 });
+        if (cancelled) return;
+
+        const items = payload.data?.items || [];
+        setAccommodationOptions(items);
+        setFormData((prev) => ({
+          ...prev,
+          accommodation_id: prev.accommodation_id || items[0]?.id || '',
+        }));
+      } catch (error) {
+        if (cancelled) return;
+        console.error('[RoomTypeFormPage] Không tải được cơ sở lưu trú:', error);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Room type có thể dùng tiện nghi scope 'room' hoặc 'both',
+  // nên gọi cả hai và gộp theo id.
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const [roomItems, bothItems] = await Promise.all([
+          lookupsApi.getAmenities('room'),
+          lookupsApi.getAmenities('both'),
+        ]);
+        if (cancelled) return;
+
+        const seen = new Set();
+        const merged = [];
+
+        [...roomItems, ...bothItems].forEach((item) => {
+          if (seen.has(item.id)) return;
+          seen.add(item.id);
+          merged.push({
+            ...item,
+            category: item.categoryName || item.categoryCode || 'Khác',
+            icon: item.iconKey
+              ? item.iconKey.charAt(0).toUpperCase() + item.iconKey.slice(1)
+              : '',
+          });
         });
 
-        const existingRates = getRoomWeekdayRates(existing.id);
-        if (existingRates && existingRates.length > 0) {
-          const map = {};
-          existingRates.forEach((r) => {
-            map[r.day_of_week] = r.price;
-          });
-          setWeekdayRates(map);
-        }
-        setIsNotFound(false);
-      } else {
-        setIsNotFound(true);
+        setAmenityOptions(merged);
+      } catch (error) {
+        if (cancelled) return;
+        console.error('[RoomTypeFormPage] Không tải được tiện nghi:', error);
       }
-    } else if (preselectedAccId) {
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Khi Sửa: đọc detail thật từ DB thay vì tìm trong mock context.
+  useEffect(() => {
+    if (!isEdit) {
+      setIsLoading(false);
+      return undefined;
+    }
+
+    let cancelled = false;
+    setIsLoading(true);
+
+    (async () => {
+      try {
+        const payload = await roomTypesApi.getDetail(id);
+        if (cancelled) return;
+
+        const detail = payload.data;
+
+        setFormData(detailToFormState(detail));
+        setWeekdayRates(ratesToWeekdayState(detail.weekdayRates));
+        setIsNotFound(false);
+      } catch (error) {
+        if (cancelled) return;
+
+        if (error.status === 404) {
+          setIsNotFound(true);
+        } else {
+          setErrors((prev) => ({ ...prev, form: error.message }));
+        }
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [id, isEdit]);
+
+  // Create mode có thể được mở từ trang cơ sở lưu trú với ?accommodation_id=...
+  useEffect(() => {
+    if (!isEdit && preselectedAccId) {
       setFormData((prev) => ({ ...prev, accommodation_id: Number(preselectedAccId) }));
     }
-  }, [id, isEdit, roomTypes, preselectedAccId, amenities]);
+  }, [isEdit, preselectedAccId]);
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -218,56 +377,121 @@ export default function RoomTypeFormPage() {
     });
   };
 
-  // Cover Image handlers (accepts ONE image only)
-  const handleCoverFileChange = (e) => {
+  // Cover image: hiện preview blob: ngay, sau đó thay bằng URL server.
+  const handleCoverFileChange = async (e) => {
     const file = e.target.files?.[0];
-    if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      setErrors((prev) => ({ ...prev, room_image: 'Kích thước ảnh tối đa là 5MB.' }));
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = (uploadEvent) => {
-      setFormData((prev) => ({ ...prev, room_image: uploadEvent.target.result }));
-    };
-    reader.readAsDataURL(file);
-
-    if (errors.room_image) {
-      setErrors((prev) => ({ ...prev, room_image: null }));
-    }
     if (coverFileInputRef.current) {
       coverFileInputRef.current.value = '';
     }
-  };
+    if (!file || uploadingCount > 0) return;
 
-  const handleSelectPresetCover = (imgSrc) => {
-    setFormData((prev) => ({ ...prev, room_image: imgSrc }));
-    if (errors.room_image) {
-      setErrors((prev) => ({ ...prev, room_image: null }));
+    const validationMessage = validateImageFile(file);
+    if (validationMessage) {
+      setErrors((prev) => ({ ...prev, room_image: validationMessage }));
+      return;
+    }
+
+    const previousUrl = formData.room_image;
+    const previewUrl = URL.createObjectURL(file);
+
+    setErrors((prev) => ({ ...prev, room_image: null }));
+    setFormData((prev) => ({ ...prev, room_image: previewUrl }));
+    setUploadingCount((count) => count + 1);
+
+    try {
+      const uploadedUrl = await roomTypesApi.uploadImage(file);
+      setFormData((prev) => ({ ...prev, room_image: uploadedUrl }));
+    } catch (error) {
+      // Upload lỗi thì trả lại ảnh cũ, không để blob: nằm lại trong form.
+      setFormData((prev) => ({ ...prev, room_image: previousUrl }));
+      setErrors((prev) => ({
+        ...prev,
+        room_image: error.message || 'Tải ảnh lên thất bại.',
+      }));
+      console.error('[RoomTypeFormPage] Upload ảnh bìa thất bại:', error);
+    } finally {
+      URL.revokeObjectURL(previewUrl);
+      setUploadingCount((count) => Math.max(0, count - 1));
     }
   };
 
-  // Supplementary Images handlers (supports MULTIPLE images)
-  const handleSupplementaryFileChange = (e) => {
+  // Supplementary images: upload song song, map preview blob: -> URL server.
+  const handleSupplementaryFileChange = async (e) => {
     const files = Array.from(e.target.files || []);
-    if (files.length === 0) return;
-
-    files.forEach((file) => {
-      if (file.size <= 5 * 1024 * 1024) {
-        const reader = new FileReader();
-        reader.onload = (uploadEvent) => {
-          setFormData((prev) => ({
-            ...prev,
-            supplementary_images: [...(prev.supplementary_images || []), uploadEvent.target.result]
-          }));
-        };
-        reader.readAsDataURL(file);
-      }
-    });
-
     if (suppFileInputRef.current) {
       suppFileInputRef.current.value = '';
     }
+    if (files.length === 0 || uploadingCount > 0) return;
+
+    const validFiles = [];
+    const invalidMessages = [];
+    for (const file of files) {
+      const validationMessage = validateImageFile(file);
+      if (validationMessage) {
+        invalidMessages.push(`${file.name}: ${validationMessage}`);
+      } else {
+        validFiles.push(file);
+      }
+    }
+
+    if (validFiles.length === 0) {
+      setErrors((prev) => ({
+        ...prev,
+        supplementary_images: invalidMessages.join(' '),
+      }));
+      return;
+    }
+
+    const previews = validFiles.map((file) => ({
+      file,
+      previewUrl: URL.createObjectURL(file),
+    }));
+
+    // Vẫn báo các file bị từ chối, kể cả khi một số file hợp lệ được upload.
+    setErrors((prev) => ({
+      ...prev,
+      supplementary_images: invalidMessages.length
+        ? invalidMessages.join(' ')
+        : null,
+    }));
+    setFormData((prev) => ({
+      ...prev,
+      supplementary_images: [
+        ...(prev.supplementary_images || []),
+        ...previews.map((item) => item.previewUrl),
+      ],
+    }));
+    setUploadingCount((count) => count + previews.length);
+
+    await Promise.all(
+      previews.map(async ({ file, previewUrl }) => {
+        try {
+          const uploadedUrl = await roomTypesApi.uploadImage(file);
+          setFormData((prev) => ({
+            ...prev,
+            supplementary_images: (prev.supplementary_images || []).map(
+              (url) => (url === previewUrl ? uploadedUrl : url)
+            ),
+          }));
+        } catch (error) {
+          // Ảnh nào lỗi thì bỏ đúng preview đó, không đụng ảnh khác.
+          setFormData((prev) => ({
+            ...prev,
+            supplementary_images: (prev.supplementary_images || []).filter(
+              (url) => url !== previewUrl
+            ),
+          }));
+          setErrors((prev) => ({
+            ...prev,
+            supplementary_images: error.message || 'Tải ảnh lên thất bại.',
+          }));
+          console.error('[RoomTypeFormPage] Upload ảnh phụ thất bại:', error);
+        } finally {
+          URL.revokeObjectURL(previewUrl);
+          setUploadingCount((count) => Math.max(0, count - 1));
+        }
+      })
+    );
   };
 
   const handleRemoveSupplementaryImage = (indexToRemove) => {
@@ -303,7 +527,7 @@ export default function RoomTypeFormPage() {
   // Filtered amenities grouped by category
   const filteredAmenitiesByCategory = useMemo(() => {
     const grouped = {};
-    amenities.forEach((item) => {
+    amenityOptions.forEach((item) => {
       if (amenityCategoryFilter && item.category !== amenityCategoryFilter) {
         return;
       }
@@ -318,118 +542,113 @@ export default function RoomTypeFormPage() {
       grouped[cat].push(item);
     });
     return grouped;
-  }, [amenities, amenityCategoryFilter, amenitySearchTerm]);
+  }, [amenityOptions, amenityCategoryFilter, amenitySearchTerm]);
 
   // Unique categories list
   const uniqueCategories = useMemo(() => {
     const set = new Set();
-    amenities.forEach((a) => {
+    amenityOptions.forEach((a) => {
       if (a.category) set.add(a.category);
     });
     return Array.from(set);
-  }, [amenities]);
+  }, [amenityOptions]);
 
-  // Validate fields across all 5 tabs and focus the first tab with an error
-  const validate = () => {
-    const newErrors = {};
-
-    // Tab 1: General
-    if (!formData.name?.trim()) newErrors.name = 'Vui lòng nhập tên loại phòng.';
-    if (!formData.code?.trim()) newErrors.code = 'Vui lòng nhập mã loại phòng.';
-    if (!formData.accommodation_id) newErrors.accommodation_id = 'Vui lòng chọn cơ sở lưu trú trực thuộc.';
-
-    // Tab 2: Capacity & Dimensions
-    if (Number(formData.room_size) <= 0) newErrors.room_size = 'Diện tích phòng phải lớn hơn 0.';
-    if (Number(formData.base_price) <= 0) newErrors.base_price = 'Giá gốc phải lớn hơn 0.';
-    if (Number(formData.max_occupancy) < Number(formData.included_adults)) {
-      newErrors.max_occupancy = 'Sức chứa tối đa không thể nhỏ hơn số người lớn tiêu chuẩn.';
-    }
-    if (Number(formData.max_adults) < Number(formData.included_adults)) {
-      newErrors.max_adults = 'Số người lớn tối đa không thể nhỏ hơn số người lớn tiêu chuẩn.';
-    }
-
-    // Tab 3: Weekday Rates
-    for (let day = 1; day <= 7; day++) {
-      const price = Number(weekdayRates[day]);
-      if (isNaN(price) || price < 0) {
-        newErrors.weekday_rates = 'Vui lòng nhập giá hợp lệ cho tất cả 7 ngày trong tuần.';
-        break;
-      }
-    }
-
-    // Tab 5: Images
-    if (!formData.room_image) {
-      newErrors.room_image = 'Vui lòng chọn hoặc tải lên hình đại diện loại phòng.';
-    }
-
-    setErrors(newErrors);
-
-    if (Object.keys(newErrors).length > 0) {
-      // Activate the earliest tab containing an error
-      if (newErrors.name || newErrors.code || newErrors.accommodation_id) {
-        setActiveTab('general');
-      } else if (newErrors.room_size || newErrors.base_price || newErrors.max_occupancy || newErrors.max_adults) {
-        setActiveTab('capacity');
-      } else if (newErrors.weekday_rates) {
-        setActiveTab('pricing');
-      } else if (newErrors.room_image) {
-        setActiveTab('media');
-      }
-      return false;
-    }
-
-    return true;
-  };
-
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (isSubmitting) return;
+    if (isSubmitting || uploadingCount > 0) return;
 
-    if (!validate()) return;
+    setErrors({});
+
+    // Chốt chặn cuối: nếu còn URL blob:/data: thì ảnh chưa lên server.
+    const localFields = [];
+    if (isLocalPreviewUrl(formData.room_image)) {
+      localFields.push('room_image');
+    }
+    if ((formData.supplementary_images || []).some(isLocalPreviewUrl)) {
+      localFields.push('supplementary_images');
+    }
+
+    if (localFields.length > 0) {
+      const message = 'Ảnh vẫn đang được tải lên server. Vui lòng chờ hoàn tất.';
+      const imageErrors = { form: message };
+      localFields.forEach((field) => {
+        imageErrors[field] = message;
+      });
+      setErrors(imageErrors);
+      setActiveTab('media');
+      return;
+    }
+
+    const payload = toRoomTypeWritePayload(formData, weekdayRates);
+
+    console.group('[RoomTypeFormPage.handleSubmit]');
+    console.log('[1] chế độ:', isEdit ? 'cập nhật' : 'tạo mới');
+    console.log('[2] payload:', payload);
 
     setIsSubmitting(true);
+
     try {
-      const selectedAmenityNames = (formData.amenity_ids || []).map((amId) => {
-        const am = amenities.find((a) => a.id === amId);
-        return am ? am.name : '';
-      }).filter(Boolean);
-
-      const payload = {
-        ...formData,
-        accommodation_id: Number(formData.accommodation_id),
-        room_size: Number(formData.room_size),
-        number_of_beds: Number(formData.number_of_beds),
-        included_adults: Number(formData.included_adults),
-        included_children: Number(formData.included_children),
-        max_adults: Number(formData.max_adults),
-        max_children: Number(formData.max_children),
-        max_occupancy: Number(formData.max_occupancy),
-        extra_adult_fee: Number(formData.extra_adult_fee),
-        extra_child_fee: Number(formData.extra_child_fee),
-        base_price: Number(formData.base_price),
-        amenity_ids: formData.amenity_ids || [],
-        amenities: selectedAmenityNames,
-        room_image: formData.room_image,
-        supplementary_images: formData.supplementary_images || [],
-        gallery_images: formData.supplementary_images || [],
-        weekday_rates: weekdayRates
-      };
-
       if (isEdit) {
-        updateRoomType(id, payload);
+        const saved = await roomTypesApi.update(id, payload);
+        console.log('[3] cập nhật thành công id:', saved.id);
+        showToast('Đã cập nhật loại phòng thành công.');
+        navigate('/admin/room-types');
       } else {
-        addRoomType(payload);
-      }
-
-      if (preselectedAccId) {
-        navigate(`/admin/accommodations/${preselectedAccId}`);
-      } else {
+        const created = await roomTypesApi.create(payload);
+        console.log('[3] tạo thành công id:', created.id);
+        showToast('Đã tạo loại phòng thành công.');
         navigate('/admin/room-types');
       }
+    } catch (error) {
+      const apiErrors = error.errors || {};
+      const mappedErrors = {};
+
+      Object.entries(apiErrors).forEach(([apiField, message]) => {
+        const formField = API_FIELD_TO_FORM_FIELD[apiField] || apiField;
+        mappedErrors[formField] = message;
+      });
+
+      // Banner chung ưu tiên message cụ thể đầu tiên của backend.
+      const firstSpecificMessage = Object.values(apiErrors)[0];
+      setErrors({
+        ...mappedErrors,
+        form: firstSpecificMessage || error.message,
+      });
+
+      // Nhảy tới tab chứa field lỗi đầu tiên.
+      const firstApiField = Object.keys(apiErrors)[0];
+      const firstFormField =
+        API_FIELD_TO_FORM_FIELD[firstApiField] || firstApiField;
+      setActiveTab(FIELD_TAB_MAP[firstFormField] || 'general');
+
+      console.error('[4] lỗi lưu loại phòng:', {
+        status: error.status,
+        errorCode: error.errorCode,
+        errors: apiErrors,
+      });
     } finally {
       setIsSubmitting(false);
+      console.groupEnd();
     }
   };
+
+  if (isLoading) {
+    return (
+      <div className="admin-page">
+        <PageHeader
+          title="Đang tải loại phòng..."
+          breadcrumb={[
+            { label: 'Cơ sở lưu trú', path: '/admin/accommodations' },
+            { label: 'Loại phòng', path: '/admin/room-types' },
+            { label: isEdit ? 'Chỉnh sửa' : 'Thêm mới' }
+          ]}
+        />
+        <div className="admin-card" style={{ padding: '48px', textAlign: 'center', color: '#6B7280' }}>
+          Đang tải dữ liệu loại phòng từ server...
+        </div>
+      </div>
+    );
+  }
 
   if (isNotFound) {
     return (
@@ -483,13 +702,28 @@ export default function RoomTypeFormPage() {
               type="button"
               onClick={handleSubmit}
               className="btn btn-primary"
-              disabled={isSubmitting}
+              disabled={isSubmitting || uploadingCount > 0}
             >
-              <Save size={14} /> {isEdit ? 'Lưu thay đổi' : 'Tạo loại phòng'}
+              <Save size={14} />
+              {uploadingCount > 0
+                ? 'Đang tải ảnh...'
+                : isSubmitting
+                  ? 'Đang lưu...'
+                  : isEdit
+                    ? 'Lưu thay đổi'
+                    : 'Tạo loại phòng'}
             </button>
           </div>
         }
       />
+
+      {errors.form && (
+        <div className="admin-card" style={{ borderColor: '#E53E3E', marginBottom: '12px' }}>
+          <div className="admin-card-body" style={{ color: '#C53030', fontSize: '13px' }}>
+            {errors.form}
+          </div>
+        </div>
+      )}
 
       {/* Tabs: Exactly Five Tabs in required order */}
       <div className="admin-tabs" style={{ marginBottom: '16px' }}>
@@ -564,7 +798,7 @@ export default function RoomTypeFormPage() {
                   name="accommodation_id"
                   value={formData.accommodation_id}
                   onChange={handleChange}
-                  options={accommodations.map((a) => ({ value: a.id, label: a.name }))}
+                  options={accommodationOptions.map((a) => ({ value: a.id, label: a.name }))}
                   required
                   disabled={Boolean(preselectedAccId)}
                   error={errors.accommodation_id}
@@ -577,10 +811,22 @@ export default function RoomTypeFormPage() {
                   value={formData.status}
                   onChange={handleChange}
                   options={[
-                    { value: 'Active', label: 'Đang hoạt động' },
-                    { value: 'Inactive', label: 'Ngừng hoạt động' }
+                    { value: 0, label: 'Bản nháp' },
+                    { value: 1, label: 'Đang hoạt động' },
+                    { value: 2, label: 'Ngừng hoạt động' }
                   ]}
                 />
+
+                <div className="col-span-full">
+                  <FormTextarea
+                    label="Mô tả ngắn"
+                    name="short_description"
+                    value={formData.short_description}
+                    onChange={handleChange}
+                    rows={2}
+                    placeholder="1-2 câu giới thiệu ngắn về loại phòng..."
+                  />
+                </div>
 
                 <div className="col-span-full">
                   <FormTextarea
@@ -617,56 +863,24 @@ export default function RoomTypeFormPage() {
                     error={errors.room_size}
                   />
 
-                  <FormSelect
+                  <FormInput
                     label="Loại giường"
                     name="bed_type"
                     value={formData.bed_type}
                     onChange={handleChange}
-                    options={[
-                      { value: '1 King Bed', label: '1 Giường King lớn' },
-                      { value: '1 Super King Bed', label: '1 Giường Super King' },
-                      { value: '1 Queen Bed', label: '1 Giường Queen' },
-                      { value: '2 Double Beds', label: '2 Giường đôi' },
-                      { value: '2 Queen Beds', label: '2 Giường Queen' },
-                      { value: '2 Single / Twin Beds', label: '2 Giường đơn (Twin)' }
-                    ]}
+                    placeholder="VD: 1 giường King (1,8 m x 2 m)"
+                    helperText="Lấy từ cột bed_description trong DB."
                   />
 
                   <FormInput
-                    label="Số lượng giường"
-                    name="number_of_beds"
+                    label="Số phòng"
+                    name="quantity"
                     type="number"
                     min="1"
-                    max="10"
-                    value={formData.number_of_beds}
+                    value={formData.quantity}
                     onChange={handleChange}
+                    helperText="Số lượng phòng vật lý thuộc loại phòng này."
                   />
-
-                  <FormSelect
-                    label="Hướng nhìn cảnh quan"
-                    name="view"
-                    value={formData.view}
-                    onChange={handleChange}
-                    options={[
-                      { value: 'Sea', label: 'Hướng biển (Sea View)' },
-                      { value: 'Garden', label: 'Hướng vườn (Garden View)' },
-                      { value: 'Mountain', label: 'Hướng núi (Mountain View)' },
-                      { value: 'City', label: 'Hướng phố (City View)' },
-                      { value: 'Other', label: 'Khác (Other View)' }
-                    ]}
-                  />
-
-                  <div className="form-group" style={{ justifyContent: 'center' }}>
-                    <label className="form-checkbox-label" style={{ marginTop: '16px' }}>
-                      <input
-                        type="checkbox"
-                        name="balcony"
-                        checked={formData.balcony}
-                        onChange={handleChange}
-                      />
-                      <span>Có ban công riêng hoặc sân hiên ngoài trời</span>
-                    </label>
-                  </div>
                 </div>
               </div>
             </div>
@@ -892,7 +1106,6 @@ export default function RoomTypeFormPage() {
                           type="number"
                           step="50000"
                           min="0"
-                          required
                           className="form-input"
                           value={val}
                           onChange={(e) => {
@@ -1174,6 +1387,13 @@ export default function RoomTypeFormPage() {
         {/* Tab 5: Hình ảnh phòng (TWO clearly separated upload controls) */}
         {activeTab === 'media' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            {uploadingCount > 0 && (
+              <div className="admin-card" style={{ borderColor: '#F59E0B' }}>
+                <div className="admin-card-body" style={{ color: '#92400E', fontSize: '13px' }}>
+                  Đang tải {uploadingCount} ảnh lên server. Vui lòng chờ hoàn tất trước khi lưu.
+                </div>
+              </div>
+            )}
             {/* A. Cover image: Hình đại diện loại phòng */}
             <div className="admin-card">
               <div className="admin-card-header">
@@ -1231,6 +1451,7 @@ export default function RoomTypeFormPage() {
                         type="button"
                         className="btn btn-secondary btn-sm"
                         onClick={() => coverFileInputRef.current?.click()}
+                        disabled={uploadingCount > 0}
                         style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}
                       >
                         <ImageIcon size={13} /> Thay đổi hình đại diện
@@ -1239,6 +1460,7 @@ export default function RoomTypeFormPage() {
                         type="button"
                         className="btn btn-secondary btn-sm"
                         onClick={() => setFormData((prev) => ({ ...prev, room_image: '' }))}
+                        disabled={uploadingCount > 0}
                         style={{ color: '#DC2626', borderColor: '#FECACA' }}
                       >
                         <Trash2 size={13} /> Gỡ ảnh đại diện
@@ -1248,7 +1470,9 @@ export default function RoomTypeFormPage() {
                 ) : (
                   <div
                     className="image-upload-zone"
-                    onClick={() => coverFileInputRef.current?.click()}
+                    onClick={() => {
+                      if (uploadingCount === 0) coverFileInputRef.current?.click();
+                    }}
                     tabIndex={0}
                     role="button"
                     aria-label="Tải ảnh đại diện lên"
@@ -1267,8 +1491,9 @@ export default function RoomTypeFormPage() {
                 <input
                   ref={coverFileInputRef}
                   type="file"
-                  accept="image/*"
+                  accept="image/jpeg,image/png,image/webp"
                   multiple={false}
+                  disabled={uploadingCount > 0}
                   style={{ display: 'none' }}
                   onChange={handleCoverFileChange}
                 />
@@ -1277,42 +1502,6 @@ export default function RoomTypeFormPage() {
                     {errors.room_image}
                   </p>
                 )}
-
-                {/* Preset suggestions */}
-                <div style={{ marginTop: '16px', borderTop: '1px solid #E5E7EB', paddingTop: '12px', maxWidth: '440px' }}>
-                  <div style={{ fontSize: '11.5px', fontWeight: 600, color: '#6B7280', marginBottom: '8px' }}>
-                    Hoặc chọn ảnh phòng mẫu có sẵn trong thư viện:
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px' }}>
-                    {[
-                      { img: resortDanangImg, label: 'Resort Đà Nẵng' },
-                      { img: hotelHanoiImg, label: 'Hotel Hà Nội' },
-                      { img: resortPhuquocImg, label: 'Resort Phú Quốc' },
-                      { img: homestaySapaImg, label: 'Homestay Sa Pa' }
-                    ].map((sample, sIdx) => (
-                      <button
-                        key={sIdx}
-                        type="button"
-                        onClick={() => handleSelectPresetCover(sample.img)}
-                        style={{
-                          border: formData.room_image === sample.img ? '2px solid #287A4B' : '1px solid #D1D5DB',
-                          borderRadius: '4px',
-                          overflow: 'hidden',
-                          padding: 0,
-                          cursor: 'pointer',
-                          background: 'none'
-                        }}
-                        title={sample.label}
-                      >
-                        <img
-                          src={sample.img}
-                          alt={sample.label}
-                          style={{ width: '100%', height: '48px', objectFit: 'cover', display: 'block' }}
-                        />
-                      </button>
-                    ))}
-                  </div>
-                </div>
               </div>
             </div>
 
@@ -1342,7 +1531,9 @@ export default function RoomTypeFormPage() {
                 {/* Upload Zone */}
                 <div
                   className="image-upload-zone"
-                  onClick={() => suppFileInputRef.current?.click()}
+                  onClick={() => {
+                    if (uploadingCount === 0) suppFileInputRef.current?.click();
+                  }}
                   tabIndex={0}
                   role="button"
                   aria-label="Tải thêm ảnh phụ"
@@ -1358,8 +1549,9 @@ export default function RoomTypeFormPage() {
                   <input
                     ref={suppFileInputRef}
                     type="file"
-                    accept="image/*"
+                    accept="image/jpeg,image/png,image/webp"
                     multiple={true}
+                    disabled={uploadingCount > 0}
                     style={{ display: 'none' }}
                     onChange={handleSupplementaryFileChange}
                   />
@@ -1401,6 +1593,7 @@ export default function RoomTypeFormPage() {
                             e.stopPropagation();
                             handleRemoveSupplementaryImage(idx);
                           }}
+                          disabled={uploadingCount > 0}
                           title="Gỡ ảnh này"
                           aria-label={`Xóa ảnh phụ ${idx + 1}`}
                           style={{
@@ -1453,6 +1646,12 @@ export default function RoomTypeFormPage() {
                     Chưa có ảnh phụ nào được thêm. Nhấp vào khung ở trên để tải lên các hình ảnh góc phòng, ban công hoặc phòng tắm.
                   </div>
                 )}
+
+                {errors.supplementary_images && (
+                  <p className="form-error" style={{ marginTop: '8px' }}>
+                    {errors.supplementary_images}
+                  </p>
+                )}
               </div>
             </div>
           </div>
@@ -1466,8 +1665,19 @@ export default function RoomTypeFormPage() {
           >
             Hủy
           </Link>
-          <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
-            <Save size={14} /> {isEdit ? 'Lưu thay đổi' : 'Tạo loại phòng'}
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={isSubmitting || uploadingCount > 0}
+          >
+            <Save size={14} />
+            {uploadingCount > 0
+              ? 'Đang tải ảnh...'
+              : isSubmitting
+                ? 'Đang lưu...'
+                : isEdit
+                  ? 'Lưu thay đổi'
+                  : 'Tạo loại phòng'}
           </button>
         </div>
       </form>

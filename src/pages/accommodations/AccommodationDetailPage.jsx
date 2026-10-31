@@ -1,10 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { accommodationsApi } from '../../api/accommodations.js';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useAdmin } from '../../context/AdminContext.jsx';
 import PageHeader from '../../components/common/PageHeader.jsx';
 import StatusBadge from '../../components/common/StatusBadge.jsx';
 import ConfirmDialog from '../../components/common/ConfirmDialog.jsx';
-import { formatVND, formatDateVN } from '../../data/mockData.js';
+// Helper định dạng dùng chung, không phụ thuộc dữ liệu mock.
+import { formatVND, formatDateVN } from '../../data/entities.js';
 import {
   ArrowLeft,
   Edit2,
@@ -14,7 +16,6 @@ import {
   Mail,
   Star,
   Plus,
-  Bed,
   CheckCircle,
   Calendar,
   DollarSign
@@ -24,73 +25,156 @@ export default function AccommodationDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const {
-    accommodations,
-    locations,
-    roomTypes,
-    amenities,
-    attractions,
     roomRates,
     ratePeriods,
     getRoomWeekdayRates,
-    deleteAccommodation,
-    deleteRoomType
+    showToast
   } = useAdmin();
+
+  const [accommodation, setAccommodation] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(true);
+  const [detailError, setDetailError] = useState(null);
 
   const [activeTab, setActiveTab] = useState('general');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [roomToDelete, setRoomToDelete] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+  const [featuredUpdating, setFeaturedUpdating] = useState(false);
 
-  const accommodation = accommodations.find((a) => a.id === Number(id));
+  useEffect(() => {
+    let cancelled = false;
 
-  if (!accommodation) {
+    async function loadAccommodationDetail() {
+      setDetailLoading(true);
+      setDetailError(null);
+
+      try {
+        const payload = await accommodationsApi.getDetail(id);
+
+        if (cancelled) return;
+
+        setAccommodation(payload.data);
+      } catch (error) {
+        if (!cancelled) {
+          console.error('[ERROR] Tải detail thất bại:', error);
+          setDetailError(error);
+        }
+      } finally {
+        if (!cancelled) {
+          setDetailLoading(false);
+        }
+      }
+    }
+
+    loadAccommodationDetail();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
+
+  if (detailLoading) {
+    return <div style={{ padding: '30px' }}>Đang tải chi tiết...</div>;
+  }
+
+  if (detailError || !accommodation) {
     return (
       <div style={{ padding: '30px', textAlign: 'center' }}>
-        <h2 style={{ fontSize: '18px', fontWeight: 700 }}>Không tìm thấy cơ sở lưu trú</h2>
-        <p style={{ color: '#6B7280', margin: '8px 0 16px' }}>
-          Cơ sở lưu trú có mã #{id} không tồn tại hoặc đã bị gỡ bỏ khỏi hệ thống.
+        <h2>Không tìm thấy cơ sở lưu trú</h2>
+        <p>
+          Cơ sở lưu trú có mã #{id} không tồn tại hoặc đã bị gỡ bỏ.
         </p>
         <Link to="/admin/accommodations" className="btn btn-secondary">
-          <ArrowLeft size={14} /> Quay lại danh sách cơ sở lưu trú
+          <ArrowLeft size={14} /> Quay lại danh sách
         </Link>
       </div>
     );
   }
 
-  // Location display name
-  const loc = locations.find((l) => l.id === accommodation.location_id);
-  const parentLoc = loc?.parent_location_id ? locations.find((l) => l.id === loc.parent_location_id) : null;
-  const locationDisplay = [parentLoc?.name, loc?.name].filter(Boolean).join(' › ') || 'Việt Nam';
+  // Tên điểm đến lấy trực tiếp từ DTO detail (location: { id, name }).
+  // Trước đây tra `locations` mock bằng `accommodation.location_id` — field này
+  // không tồn tại trong adapter detail nên luôn rơi về "Việt Nam".
+  const locationDisplay = accommodation.location?.name || '—';
 
-  // Associated room types
-  const propertyRoomTypes = roomTypes.filter((r) => r.accommodation_id === accommodation.id);
+  // DTO detail trả type dạng object { id, code, name }; nối chuỗi trực tiếp
+  // sẽ ra "[object Object]" nên đọc .name trước, fallback .code.
+  const typeLabel = accommodation.type?.name || accommodation.type?.code || '—';
 
-  // Associated amenities
-  const propertyAmenities = amenities.filter((am) => (accommodation.amenity_ids || []).includes(am.id));
-
-  // Associated nearby attractions
+  // Detail API đã trả đầy đủ các mảng quan hệ.
+  // Không lấy từ context mock vì context chỉ chứa dữ liệu khởi tạo cũ.
+  const propertyRoomTypes = accommodation.room_types || [];
+  const propertyAmenities = accommodation.amenities || [];
   const propertyAttractions = accommodation.attractions || [];
 
-  const handleDeleteAccommodation = () => {
-    const success = deleteAccommodation(accommodation.id);
-    if (success) {
+  // Địa chỉ đầy đủ = số nhà/đường + phường/xã + tỉnh/thành.
+  // DTO detail đã có ward.name và province.name từ backend;
+  // ward có thể null (LEFT JOIN wards) nên phải filter phần rỗng,
+  // tránh nối chuỗi thô tạo ra "undefined".
+  const fullAddress = [
+    accommodation.address,
+    accommodation.ward?.name,
+    accommodation.province?.name
+  ]
+    .filter(Boolean)
+    .join(', ');
+
+  // Chỉ vẽ sao khi có số hợp lệ 1..5. NULL/undefined = chưa xếp hạng → 0 sao,
+  // trước đây `star_rating || 5` biến NULL thành 5 sao giả trên UI.
+  const parsedStarCount = Number(accommodation.star_rating);
+  const starCount =
+    Number.isFinite(parsedStarCount) && parsedStarCount > 0
+      ? Math.min(Math.round(parsedStarCount), 5)
+      : 0;
+
+  const handleDeleteAccommodation = async () => {
+    if (deleting) return;
+
+    setDeleting(true);
+    try {
+      await accommodationsApi.remove(accommodation.id);
+      showToast('Đã xóa cơ sở lưu trú.');
       navigate('/admin/accommodations');
+    } catch (error) {
+      showToast(
+        error.errorCode === 'INVALID_STATE'
+          ? 'Không thể xóa cơ sở lưu trú vì còn loại phòng đang hoạt động.'
+          : error.message || 'Không thể xóa cơ sở lưu trú.',
+        'error'
+      );
+    } finally {
+      setDeleting(false);
+      setDeleteDialogOpen(false);
     }
-    setDeleteDialogOpen(false);
   };
 
-  const handleDeleteRoom = () => {
-    if (roomToDelete) {
-      deleteRoomType(roomToDelete.id);
-      setRoomToDelete(null);
+  const handleFeaturedToggle = async () => {
+    if (featuredUpdating) return;
+
+    const nextFeatured = !accommodation.featured;
+    setFeaturedUpdating(true);
+    try {
+      const result = await accommodationsApi.updateFeatured(
+        accommodation.id,
+        nextFeatured
+      );
+      setAccommodation((prev) => ({
+        ...prev,
+        featured: result.isFeatured
+      }));
+      showToast(result.isFeatured ? 'Đã bật nổi bật.' : 'Đã tắt nổi bật.');
+    } catch (error) {
+      showToast(error.message || 'Không thể cập nhật nổi bật.', 'error');
+    } finally {
+      setFeaturedUpdating(false);
     }
   };
+
 
   return (
     <div>
       {/* Page Header */}
       <PageHeader
         title={accommodation.name}
-        description={`${accommodation.type} · Mã: ${accommodation.code} · ${locationDisplay}`}
+        description={`${typeLabel} · Mã: ${accommodation.code} · ${locationDisplay}`}
         breadcrumb={[
           { label: 'Cơ sở lưu trú', path: '/admin/accommodations' },
           { label: accommodation.name }
@@ -106,6 +190,7 @@ export default function AccommodationDetailPage() {
             <button
               type="button"
               className="btn btn-outline-danger"
+              disabled={deleting}
               onClick={() => setDeleteDialogOpen(true)}
             >
               <Trash2 size={14} /> Xóa
@@ -136,14 +221,41 @@ export default function AccommodationDetailPage() {
         <div style={{ flex: 1, padding: '16px 20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-              <StatusBadge status={accommodation.type} />
-              <StatusBadge status={accommodation.status} />
+              <StatusBadge
+                status={
+                  accommodation.type?.code ||
+                  accommodation.type?.name ||
+                  accommodation.type ||
+                  ""
+                }
+              />
+              {/* accommodation.status là số 0/1/2; StatusBadge không dịch số.
+                  DTO đã có statusLabel ("Đang hoạt động"…) nên truyền nhãn chữ,
+                  vẫn fallback về số nếu statusLabel rỗng. */}
+              <StatusBadge status={accommodation.statusLabel || accommodation.status} />
               {accommodation.featured && <span className="badge badge-warning">Nổi bật</span>}
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', color: '#F4C542', marginLeft: 'auto' }}>
-                {Array.from({ length: accommodation.star_rating || 5 }).map((_, i) => (
-                  <Star key={i} size={14} fill="#F4C542" />
-                ))}
-              </div>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                disabled={featuredUpdating}
+                onClick={handleFeaturedToggle}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+              >
+                <Star
+                  size={13}
+                  fill={accommodation.featured ? '#F4C542' : 'none'}
+                  color={accommodation.featured ? '#F4C542' : '#6B7280'}
+                />
+                {accommodation.featured ? 'Tắt nổi bật' : 'Bật nổi bật'}
+              </button>
+              {/* starCount = 0 (NULL/không hợp lệ) thì không render khối sao nào. */}
+              {starCount > 0 && (
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', color: '#F4C542', marginLeft: 'auto' }}>
+                  {Array.from({ length: starCount }).map((_, i) => (
+                    <Star key={i} size={14} fill="#F4C542" />
+                  ))}
+                </div>
+              )}
             </div>
 
             <p style={{ fontSize: '13px', color: '#4B5563', marginBottom: '12px' }}>
@@ -164,7 +276,8 @@ export default function AccommodationDetailPage() {
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <MapPin size={14} color="#6B7280" />
-              <span style={{ color: '#292D32' }}>{accommodation.address}</span>
+              {/* Ghép đủ 3 cấp địa chỉ; nếu tất cả đều rỗng thì hiện "—" */}
+              <span style={{ color: '#292D32' }}>{fullAddress || '—'}</span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <Phone size={14} color="#6B7280" />
@@ -177,7 +290,9 @@ export default function AccommodationDetailPage() {
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <Calendar size={14} color="#6B7280" />
               <span style={{ color: '#292D32' }}>
-                Nhận phòng: {accommodation.checkin_time} / Trả phòng: {accommodation.checkout_time}
+                {/* DTO detail dùng camelCase (checkInTime/checkOutTime);
+                    bản cũ đọc snake_case của mock nên luôn hiện trống. */}
+                Nhận phòng: {accommodation.checkInTime || '—'} / Trả phòng: {accommodation.checkOutTime || '—'}
               </span>
             </div>
           </div>
@@ -219,7 +334,7 @@ export default function AccommodationDetailPage() {
           className={`admin-tab ${activeTab === 'images' ? 'active' : ''}`}
           onClick={() => setActiveTab('images')}
         >
-          Hình ảnh ({(accommodation.gallery_images || []).length})
+          Hình ảnh ({accommodation.images?.length || 0})
         </button>
         <button
           type="button"
@@ -314,10 +429,9 @@ export default function AccommodationDetailPage() {
                 <tr>
                   <th>Hình ảnh</th>
                   <th>Tên loại phòng</th>
-                  <th>Giường & Kích thước</th>
+                  <th>Giường & Diện tích</th>
                   <th>Sức chứa</th>
                   <th style={{ textAlign: 'right' }}>Giá gốc / đêm</th>
-                  <th>Hướng nhìn</th>
                   <th>Trạng thái</th>
                   <th style={{ textAlign: 'center' }}>Thao tác</th>
                 </tr>
@@ -325,7 +439,7 @@ export default function AccommodationDetailPage() {
               <tbody>
                 {propertyRoomTypes.length === 0 ? (
                   <tr>
-                    <td colSpan={8} style={{ textAlign: 'center', padding: '30px', color: '#6B7280' }}>
+                    <td colSpan={7} style={{ textAlign: 'center', padding: '30px', color: '#6B7280' }}>
                       Cơ sở lưu trú này chưa có loại phòng nào được thiết lập.
                     </td>
                   </tr>
@@ -351,7 +465,9 @@ export default function AccommodationDetailPage() {
                       <td>
                         <div>{room.bed_type}</div>
                         <div style={{ fontSize: '11px', color: '#6B7280' }} className="tabular-nums">
-                          {room.room_size} m² {room.balcony && '· Có ban công'}
+                          {room.room_size === null || room.room_size === undefined
+                            ? 'Diện tích: —'
+                            : `Diện tích: ${room.room_size} m²`}
                         </div>
                       </td>
                       <td className="tabular-nums" style={{ fontSize: '12px' }}>
@@ -362,10 +478,7 @@ export default function AccommodationDetailPage() {
                         {formatVND(room.base_price)}
                       </td>
                       <td>
-                        <span className="badge badge-neutral">{room.view}</span>
-                      </td>
-                      <td>
-                        <StatusBadge status={room.status} />
+                        <StatusBadge status={room.statusLabel} />
                       </td>
                       <td style={{ textAlign: 'center' }}>
                         <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
@@ -376,14 +489,6 @@ export default function AccommodationDetailPage() {
                           >
                             <Edit2 size={13} />
                           </Link>
-                          <button
-                            type="button"
-                            className="row-action-btn delete"
-                            title="Xóa loại phòng"
-                            onClick={() => setRoomToDelete(room)}
-                          >
-                            <Trash2 size={13} />
-                          </button>
                         </div>
                       </td>
                     </tr>
@@ -491,7 +596,7 @@ export default function AccommodationDetailPage() {
                   </thead>
                   <tbody>
                     {propertyAttractions.map((item) => {
-                      const att = attractions.find((a) => a.id === Number(item.attraction_id));
+                      const att = item;
                       const thumbnail = att?.image || accommodation.cover_image;
 
                       return (
@@ -576,7 +681,7 @@ export default function AccommodationDetailPage() {
           </div>
           <div className="admin-card-body">
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '14px' }}>
-              {(accommodation.gallery_images || [accommodation.cover_image]).map((imgSrc, idx) => (
+              {(accommodation.gallery_images || []).map((imgSrc, idx) => (
                 <div
                   key={idx}
                   style={{
@@ -755,23 +860,14 @@ export default function AccommodationDetailPage() {
       <ConfirmDialog
         isOpen={deleteDialogOpen}
         title="Xác nhận xóa cơ sở lưu trú"
-        message={`Bạn có chắc chắn muốn xóa cơ sở lưu trú "${accommodation.name}"? Thao tác này sẽ xóa toàn bộ loại phòng và bảng giá trực thuộc.`}
+        message={`Bạn có chắc chắn muốn xóa cơ sở lưu trú "${accommodation.name}" không?`}
         confirmLabel="Xóa cơ sở lưu trú"
         confirmVariant="danger"
         onConfirm={handleDeleteAccommodation}
         onCancel={() => setDeleteDialogOpen(false)}
       />
 
-      {/* Delete Room Dialog */}
-      <ConfirmDialog
-        isOpen={Boolean(roomToDelete)}
-        title="Xác nhận xóa loại phòng"
-        message={`Bạn có chắc chắn muốn xóa loại phòng "${roomToDelete?.name}" khỏi cơ sở lưu trú này?`}
-        confirmLabel="Xóa loại phòng"
-        confirmVariant="danger"
-        onConfirm={handleDeleteRoom}
-        onCancel={() => setRoomToDelete(null)}
-      />
+
     </div>
   );
 }

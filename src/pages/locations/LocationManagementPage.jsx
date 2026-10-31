@@ -349,7 +349,7 @@ export default function LocationManagementPage() {
                   const parent = locations.find((l) => l.id === loc.parent_location_id);
                   const count = accCountMap[loc.id] || 0;
                   return (
-                    <tr 
+                    <tr
                       key={loc.id}
                       style={{
                         backgroundColor: loc.depth > 0 ? '#F9FAFB' : undefined

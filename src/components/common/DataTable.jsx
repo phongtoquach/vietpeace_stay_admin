@@ -4,6 +4,8 @@ import { ArrowUpDown, ArrowUp, ArrowDown, Inbox } from 'lucide-react';
 export default function DataTable({
   columns = [],
   data = [],
+  loading = false,          // true = đang chờ API, vẽ skeleton thay cho dữ liệu
+  skeletonRows = 5,         // số dòng giả, nên bằng số dòng mỗi trang
   sortField,
   sortDirection,
   onSort,
@@ -77,7 +79,25 @@ export default function DataTable({
           </tr>
         </thead>
         <tbody>
-          {data.length === 0 ? (
+          {loading ? (
+            // Vẫn render <tr>/<td> theo đúng số cột để bảng giữ kích thước,
+            // tránh việc bảng biến mất rồi "nhảy" layout khi dữ liệu về.
+            Array.from({ length: skeletonRows }).map((_, rowIndex) => (
+              <tr key={`skeleton-${rowIndex}`}>
+                {onSelectAll && (
+                  <td style={{ textAlign: 'center' }}>
+                    <div className="skeleton-line skeleton-line-sm" />
+                  </td>
+                )}
+                {columns.map((col, colIdx) => (
+                  <td key={col.accessor || colIdx} style={{ textAlign: col.align || 'left' }}>
+                    {/* Cột hẹp (width cố định) dùng thanh xám ngắn cho giống dữ liệu thật */}
+                    <div className={`skeleton-line${col.width ? ' skeleton-line-sm' : ''}`} />
+                  </td>
+                ))}
+              </tr>
+            ))
+          ) : data.length === 0 ? (
             <tr>
               <td
                 colSpan={columns.length + (onSelectAll ? 1 : 0)}

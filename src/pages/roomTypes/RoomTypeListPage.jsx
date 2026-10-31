@@ -1,75 +1,157 @@
-import React, { useState, useMemo } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useAdmin } from '../../context/AdminContext.jsx';
 import PageHeader from '../../components/common/PageHeader.jsx';
 import DataTable from '../../components/common/DataTable.jsx';
 import Pagination from '../../components/common/Pagination.jsx';
 import StatusBadge from '../../components/common/StatusBadge.jsx';
 import ConfirmDialog from '../../components/common/ConfirmDialog.jsx';
-import { formatVND } from '../../data/mockData.js';
-import { Plus, Edit2, Trash2, Search, RotateCcw } from 'lucide-react';
+import { formatVND } from '../../data/entities.js';
+import { Plus, Edit2, Search, RotateCcw, Trash2 } from 'lucide-react';
+import { roomTypesApi } from '../../api/roomTypes.js';
+import { accommodationsApi } from '../../api/accommodations.js';
+import { useAdmin } from '../../context/AdminContext.jsx';
+
+const SEARCH_DEBOUNCE_MS = 400;
 
 export default function RoomTypeListPage() {
-  const { roomTypes, accommodations, deleteRoomType } = useAdmin();
+  const { showToast } = useAdmin();
 
-  // Filters
+  // Giá trị ô tìm kiếm và giá trị đã debounce (dùng để gọi API).
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+
+  // Filter
   const [accommodationFilter, setAccommodationFilter] = useState('');
-  const [viewFilter, setViewFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
 
-  // Table state
+  // Sort + phân trang server-side
   const [sortField, setSortField] = useState('id');
   const [sortDirection, setSortDirection] = useState('asc');
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+
+  // Dữ liệu từ API
+  const [rows, setRows] = useState([]);
+  const [totalItems, setTotalItems] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  // Dòng đang chờ xác nhận xóa + id đang gọi API xóa.
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
 
-  // Accommodation map for easy lookup
-  const accMap = useMemo(() => {
-    const map = {};
-    accommodations.forEach((a) => {
-      map[a.id] = a.name;
-    });
-    return map;
-  }, [accommodations]);
+  // Tăng biến này để ép effect tải lại danh sách sau khi xóa.
+  const [reloadKey, setReloadKey] = useState(0);
 
-  // Filtered dataset
-  const filteredData = useMemo(() => {
-    return roomTypes.filter((item) => {
-      const matchSearch =
-        !searchTerm ||
-        item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.bed_type.toLowerCase().includes(searchTerm.toLowerCase());
+  // Options cho dropdown lọc cơ sở lưu trú (lấy từ DB, không dùng mock).
+  const [accommodationOptions, setAccommodationOptions] = useState([]);
 
-      const matchAcc = !accommodationFilter || String(item.accommodation_id) === String(accommodationFilter);
-      const matchView = !viewFilter || item.view === viewFilter;
-      const matchStatus = !statusFilter || item.status === statusFilter;
+  // Debounce ô tìm kiếm để không gọi API mỗi lần gõ phím.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchTerm.trim());
+      setCurrentPage(1);
+    }, SEARCH_DEBOUNCE_MS);
 
-      return matchSearch && matchAcc && matchView && matchStatus;
-    }).sort((a, b) => {
-      let valA = a[sortField];
-      let valB = b[sortField];
-      if (typeof valA === 'string') valA = valA.toLowerCase();
-      if (typeof valB === 'string') valB = valB.toLowerCase();
-      if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
-      if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
-      return 0;
-    });
-  }, [roomTypes, searchTerm, accommodationFilter, viewFilter, statusFilter, sortField, sortDirection]);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
 
-  // Pagination
-  const totalItems = filteredData.length;
-  const paginatedData = useMemo(() => {
-    const start = (currentPage - 1) * pageSize;
-    return filteredData.slice(start, start + pageSize);
-  }, [filteredData, currentPage, pageSize]);
+  // Nạp danh sách cơ sở lưu trú cho dropdown.
+  // Dùng chung API list với limit tối đa 100 (DB hiện có 72).
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const payload = await accommodationsApi.getList({ page: 1, limit: 100 });
+        if (cancelled) return;
+        setAccommodationOptions(payload.data?.items || []);
+      } catch (loadError) {
+        if (cancelled) return;
+        console.error('[RoomTypeListPage] Không tải được cơ sở lưu trú:', loadError);
+        setAccommodationOptions([]);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Gọi API mỗi khi filter/sort/page đổi.
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadRoomTypes() {
+      console.group('[RoomTypeListPage] Tải loại phòng');
+      console.log('[1] params:', {
+        q: debouncedSearch || null,
+        accommodationId: accommodationFilter || null,
+        status: statusFilter || null,
+        sortBy: sortField,
+        sortDir: sortDirection,
+        page: currentPage,
+        limit: pageSize,
+      });
+
+      setLoading(true);
+      setError(null);
+
+      try {
+        const payload = await roomTypesApi.getList({
+          q: debouncedSearch || undefined,
+          accommodationId: accommodationFilter || undefined,
+          status: statusFilter !== '' ? statusFilter : undefined,
+          sortBy: sortField,
+          sortDir: sortDirection,
+          page: currentPage,
+          limit: pageSize,
+        });
+
+        if (cancelled) return;
+
+        const items = payload.data?.items || [];
+        const pagination = payload.data?.pagination || { total: 0 };
+
+        setRows(items);
+        setTotalItems(Number(pagination.total || 0));
+        console.log('[2] kết quả:', {
+          total: pagination.total,
+          pageItems: items.length,
+          firstId: items[0]?.id ?? null,
+        });
+      } catch (fetchError) {
+        if (cancelled) return;
+        console.error('[3] lỗi tải loại phòng:', fetchError);
+        setRows([]);
+        setTotalItems(0);
+        setError(fetchError);
+      } finally {
+        if (!cancelled) setLoading(false);
+        console.groupEnd();
+      }
+    }
+
+    loadRoomTypes();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    debouncedSearch,
+    accommodationFilter,
+    statusFilter,
+    sortField,
+    sortDirection,
+    currentPage,
+    pageSize,
+    reloadKey,
+  ]);
 
   const handleResetFilters = () => {
     setSearchTerm('');
+    setDebouncedSearch('');
     setAccommodationFilter('');
-    setViewFilter('');
     setStatusFilter('');
     setCurrentPage(1);
   };
@@ -77,12 +159,34 @@ export default function RoomTypeListPage() {
   const handleSort = (field, direction) => {
     setSortField(field);
     setSortDirection(direction);
+    setCurrentPage(1);
   };
 
-  const confirmDelete = () => {
-    if (deleteTarget) {
-      deleteRoomType(deleteTarget.id);
-      setDeleteTarget(null);
+  const handleConfirmDelete = async () => {
+    const target = deleteTarget;
+    if (!target || deletingId) return;
+
+    // Đóng dialog ngay để tránh bấm xác nhận 2 lần.
+    setDeleteTarget(null);
+    setDeletingId(target.id);
+
+    try {
+      await roomTypesApi.remove(target.id);
+      showToast(`Đã xóa loại phòng "${target.name}".`);
+
+      // Vừa xóa dòng cuối của trang > 1 → lùi về trang trước.
+      if (rows.length === 1 && currentPage > 1) {
+        setCurrentPage((page) => Math.max(1, page - 1));
+      } else {
+        // Cùng trang nhưng vẫn phải gọi lại API để lấy total mới.
+        setReloadKey((key) => key + 1);
+      }
+    } catch (deleteError) {
+      showToast(deleteError.message || 'Không thể xóa loại phòng.', 'error');
+      // Refetch để đồng bộ nếu bản ghi đã bị người khác xóa (404).
+      setReloadKey((key) => key + 1);
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -96,16 +200,25 @@ export default function RoomTypeListPage() {
     },
     {
       header: 'Hình ảnh',
-      accessor: 'room_image',
+      accessor: 'coverImageUrl',
       width: '80px',
       render: (row) => (
         <div style={{ width: '56px', height: '40px', borderRadius: '4px', overflow: 'hidden', border: '1px solid #D9DDE2', backgroundColor: '#F3F4F6' }}>
-          <img
-            src={row.room_image}
-            alt={row.name}
-            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-            referrerPolicy="no-referrer"
-          />
+          {row.coverImageUrl ? (
+            <img
+              src={row.coverImageUrl}
+              alt={row.name}
+              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              referrerPolicy="no-referrer"
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+              }}
+            />
+          ) : (
+            <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9CA3AF', fontSize: '11px' }}>
+              —
+            </div>
+          )}
         </div>
       )
     },
@@ -122,54 +235,56 @@ export default function RoomTypeListPage() {
             {row.name}
           </Link>
           <div style={{ fontSize: '11px', color: '#6B7280' }} className="code-badge">
-            Mã: {row.code} · Diện tích: {row.room_size} m²
+            Mã: {row.code} · Diện tích: {row.areaSqm ?? '—'} m²
           </div>
         </div>
       )
     },
     {
       header: 'Cơ sở lưu trú',
-      accessor: 'accommodation_id',
+      accessor: 'accommodationId',
       sortable: true,
       render: (row) => (
         <Link
-          to={`/admin/accommodations/${row.accommodation_id}`}
+          to={`/admin/accommodations/${row.accommodationId}`}
           style={{ color: '#8C5A00', fontWeight: 500 }}
         >
-          {accMap[row.accommodation_id] || 'N/A'}
+          {row.accommodationName || `#${row.accommodationId}`}
         </Link>
       )
     },
     {
       header: 'Loại giường',
-      accessor: 'bed_type',
+      accessor: 'bedDescription',
       sortable: true,
-      render: (row) => <span>{row.bed_type}</span>
+      render: (row) => (
+        <span title={row.bedDescription}>{row.bedDescription || '—'}</span>
+      )
     },
     {
       header: 'Người lớn',
-      accessor: 'included_adults',
+      accessor: 'includedAdults',
       sortable: true,
       width: '105px',
       align: 'center',
-      render: (row) => <span className="tabular-nums">{row.included_adults} người lớn</span>
+      render: (row) => <span className="tabular-nums">{row.includedAdults} người lớn</span>
     },
     {
       header: 'Sức chứa tối đa',
-      accessor: 'max_occupancy',
+      accessor: 'maxOccupancy',
       sortable: true,
       width: '115px',
       align: 'center',
-      render: (row) => <span className="tabular-nums">{row.max_occupancy} khách</span>
+      render: (row) => <span className="tabular-nums">{row.maxOccupancy} khách</span>
     },
     {
       header: 'Giá gốc / đêm',
-      accessor: 'base_price',
+      accessor: 'basePrice',
       sortable: true,
       align: 'right',
       render: (row) => (
         <span style={{ fontWeight: 600, color: '#292D32' }} className="tabular-nums">
-          {formatVND(row.base_price)}
+          {formatVND(row.basePrice)}
         </span>
       )
     },
@@ -178,15 +293,15 @@ export default function RoomTypeListPage() {
       accessor: 'status',
       sortable: true,
       width: '120px',
-      render: (row) => <StatusBadge status={row.status} />
+      render: (row) => <StatusBadge status={row.statusLabel} />
     },
     {
       header: 'Thao tác',
       accessor: 'actions',
-      width: '95px',
+      width: '100px',
       align: 'center',
       render: (row) => (
-        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+        <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
           <Link
             to={`/admin/room-types/${row.id}/edit`}
             className="row-action-btn"
@@ -198,6 +313,8 @@ export default function RoomTypeListPage() {
             type="button"
             className="row-action-btn delete"
             title="Xóa loại phòng"
+            aria-label={`Xóa ${row.name}`}
+            disabled={deletingId === row.id}
             onClick={() => setDeleteTarget(row)}
           >
             <Trash2 size={13} />
@@ -235,10 +352,7 @@ export default function RoomTypeListPage() {
               style={{ width: '100%', paddingLeft: '28px' }}
               placeholder="Tìm theo tên phòng, mã phòng, loại giường..."
               value={searchTerm}
-              onChange={(e) => {
-                setSearchTerm(e.target.value);
-                setCurrentPage(1);
-              }}
+              onChange={(e) => setSearchTerm(e.target.value)}
             />
             <Search size={14} style={{ position: 'absolute', left: '8px', top: '9px', color: '#6B7280' }} />
           </div>
@@ -256,31 +370,11 @@ export default function RoomTypeListPage() {
             }}
           >
             <option value="">Tất cả cơ sở lưu trú</option>
-            {accommodations.map((acc) => (
+            {accommodationOptions.map((acc) => (
               <option key={acc.id} value={acc.id}>
                 {acc.name}
               </option>
             ))}
-          </select>
-        </div>
-
-        <div className="filter-group">
-          <label className="filter-label" htmlFor="filter-view-select">Hướng nhìn:</label>
-          <select
-            id="filter-view-select"
-            className="filter-select"
-            value={viewFilter}
-            onChange={(e) => {
-              setViewFilter(e.target.value);
-              setCurrentPage(1);
-            }}
-          >
-            <option value="">Tất cả hướng nhìn</option>
-            <option value="Sea">Hướng biển (Sea View)</option>
-            <option value="Garden">Hướng vườn (Garden View)</option>
-            <option value="Mountain">Hướng núi (Mountain View)</option>
-            <option value="City">Hướng phố (City View)</option>
-            <option value="Other">Khác (Other View)</option>
           </select>
         </div>
 
@@ -296,8 +390,9 @@ export default function RoomTypeListPage() {
             }}
           >
             <option value="">Tất cả trạng thái</option>
-            <option value="Active">Đang hoạt động</option>
-            <option value="Inactive">Ngừng hoạt động</option>
+            <option value="0">Bản nháp</option>
+            <option value="1">Đang hoạt động</option>
+            <option value="2">Ngừng hoạt động</option>
           </select>
         </div>
 
@@ -312,10 +407,20 @@ export default function RoomTypeListPage() {
         </div>
       </div>
 
+      {error && (
+        <div className="admin-card" style={{ borderColor: '#E53E3E', marginBottom: '12px' }}>
+          <div className="admin-card-body" style={{ color: '#C53030', fontSize: '13px' }}>
+            {error.message || 'Không thể tải danh sách loại phòng.'}
+          </div>
+        </div>
+      )}
+
       {/* Data Table */}
       <DataTable
         columns={columns}
-        data={paginatedData}
+        data={rows}
+        loading={loading}
+        skeletonRows={pageSize}
         sortField={sortField}
         sortDirection={sortDirection}
         onSort={handleSort}
@@ -334,15 +439,14 @@ export default function RoomTypeListPage() {
         }}
       />
 
-      {/* Delete Confirmation */}
       <ConfirmDialog
         isOpen={Boolean(deleteTarget)}
-        title="Xác nhận xóa loại phòng"
-        message={`Bạn có chắc chắn muốn xóa loại phòng "${deleteTarget?.name}"? Bảng giá ngày trong tuần liên quan cũng sẽ bị gỡ bỏ.`}
+        title="Xóa loại phòng"
+        message={`Bạn có chắc chắn muốn xóa loại phòng "${deleteTarget?.name}" không?`}
         confirmLabel="Xóa loại phòng"
-        confirmVariant="danger"
-        onConfirm={confirmDelete}
+        cancelLabel="Hủy"
         onCancel={() => setDeleteTarget(null)}
+        onConfirm={handleConfirmDelete}
       />
     </div>
   );

@@ -1,11 +1,17 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { useAuth } from './AuthContext';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useCallback,
+  useEffect
+} from 'react';
+
+import { accommodationsApi } from '../api/accommodations.js';
 import { apiFetch } from '../api/client.js';
+
+import { useAuth } from './AuthContext.jsx';
 import {
-  INITIAL_USER,
   INITIAL_LOCATIONS,
-  INITIAL_ACCOMMODATIONS,
-  INITIAL_ROOM_TYPES,
   INITIAL_BOOKINGS,
   INITIAL_ROOM_WEEKDAY_RATES,
   INITIAL_RATE_PERIODS,
@@ -19,19 +25,40 @@ import {
 } from '../data/mockData.js';
 
 const AdminContext = createContext(null);
-
-const API_BASE_URL = "http://localhost:3002/api/admin";
+const API_BASE_URL = 'http://localhost:3002/api/admin';
 
 export function AdminProvider({ children }) {
-  // Authentication state
-  const [currentUser, setCurrentUser] = useState(INITIAL_USER);
-  const [isAuthenticated, setIsAuthenticated] = useState(true);
 
-  // Entities
+  // currentLoggedInUser: user backend trả về;
+  // isCheckingAuthen: AuthContext còn đang kiểm tra session hay không.
+  const { currentLoggedInUser, isCheckingAuthen } = useAuth();
+
+  // User thật được AuthContext lấy từ session backend.
+  // Khi chưa kiểm tra xong, giá trị có thể vẫn là null.
+  const currentUser = currentLoggedInUser;
+  const isAuthenticated = Boolean(currentLoggedInUser);
+
+  // Entity
   const [locations, setLocations] = useState(INITIAL_LOCATIONS);
-  const [accommodations, setAccommodations] = useState(INITIAL_ACCOMMODATIONS);
+  // Accommodations chỉ lấy từ API; không khởi tạo bằng mock để trang nào
+  // chưa fetch sẽ hiện rỗng thay vì dữ liệu giả.
+  const [accommodations, setAccommodations] = useState([]);
+
+  // Dữ liệu list hiện tại do backend trả về.
+  const [accommodationsLoading, setAccommodationsLoading] = useState(false);
+  const [accommodationsError, setAccommodationsError] = useState(null);
+
+  const [accommodationsPagination, setAccommodationsPagination] = useState({
+    page: 1,
+    limit: 10,
+    total: 0,
+    totalPages: 0
+  });
+
   const [attractions, setAttractions] = useState(INITIAL_ATTRACTIONS);
-  const [roomTypes, setRoomTypes] = useState(INITIAL_ROOM_TYPES);
+  // Loại phòng hiện chưa có API list riêng nên state này sẽ rỗng cho tới khi
+  // module room type được nối backend (xem báo cáo các trang bị ảnh hưởng).
+  const [roomTypes, setRoomTypes] = useState([]);
   const [roomWeekdayRates, setRoomWeekdayRates] = useState(INITIAL_ROOM_WEEKDAY_RATES);
   const [amenities, setAmenities] = useState([]);
   const [amenityCategories, setAmenityCategories] = useState([]);
@@ -41,7 +68,7 @@ export function AdminProvider({ children }) {
   const [promotions, setPromotions] = useState(INITIAL_PROMOTIONS);
   const [customers, setCustomers] = useState(INITIAL_CUSTOMERS);
   const [adminUsers, setAdminUsers] = useState(INITIAL_ADMIN_USERS);
-  const [roles, setRoles] = useState(INITIAL_ROLES);
+  const [roles] = useState(INITIAL_ROLES);
 
   // Tải danh sách điểm đến từ Backend
   const fetchLocations = async () => {
@@ -69,13 +96,11 @@ export function AdminProvider({ children }) {
     }
   };
 
-  const auth = useAuth();
-  const currentLoggedInUser = auth ? auth.currentLoggedInUser : null;
-
   useEffect(() => {
     fetchLocations();
     fetchAttractions();
   }, [currentLoggedInUser]);
+
 
 
   // System settings
@@ -112,6 +137,37 @@ export function AdminProvider({ children }) {
   const removeToast = (id) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
+
+  const fetchAccommodations = useCallback(async (params = {}) => {
+    setAccommodationsLoading(true);
+    setAccommodationsError(null);
+
+    try {
+      const payload = await accommodationsApi.getList(params);
+
+      setAccommodations(payload.data?.items || []);
+      setAccommodationsPagination(
+        payload.data?.pagination || {
+          page: 1,
+          limit: 10,
+          total: 0,
+          totalPages: 0
+        }
+      );
+      return payload;
+    } catch (error) {
+      console.error('[ERROR] fetchAccommodations thất bại:', {
+        message: error.message,
+        status: error.status,
+        errorCode: error.errorCode,
+        fieldErrors: error.errors
+      });
+      setAccommodationsError(error);
+      throw error;
+    } finally {
+      setAccommodationsLoading(false);
+    }
+  }, []);
 
   // Load amenities and categories from SQL Server
   useEffect(() => {
@@ -162,81 +218,45 @@ export function AdminProvider({ children }) {
     };
   }, []);
 
+
   // Auth functions
-  const login = (email, password) => {
-    setIsAuthenticated(true);
-    setCurrentUser(INITIAL_USER);
-    showToast(`Chào mừng trở lại, ${INITIAL_USER.name}!`, 'success');
+  const login = () => {
+    showToast('Đăng nhập được xử lý bởi AuthContext.', 'info');
   };
 
   const logout = () => {
-    setIsAuthenticated(false);
-    showToast('Bạn đã đăng xuất thành công.', 'info');
+    showToast('Đăng xuất được xử lý bởi AuthContext.', 'info');
   };
-
   // Location CRUD
-  const addLocation = async (locData) => {
-    try {
-      const res = await fetch(`${API_BASE_URL}/locations`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify(locData)
-      });
-      const data = await res.json();
-      if (data.success) {
-        showToast(`Thêm điểm đến "${data.data.newLocation.name}" thành công.`);
-        await fetchLocations();
-        return data.data.newLocation;
-      } else {
-        showToast(data.message, "error");
-        return null;
-      }
-    } catch (err) {
-      showToast("Lỗi kết nối khi thêm điểm đến.", "error");
-    }
+  const addLocation = (locData) => {
+    const newId = Math.max(...locations.map((l) => l.id), 0) + 1;
+    const newLocation = { ...locData, id: newId };
+    setLocations((prev) => [...prev, newLocation]);
+    showToast(`Thêm điểm đến "${newLocation.name}" thành công.`);
+    return newLocation;
   };
 
-  const updateLocation = async (id, locData) => {
-    try {
-      const res = await fetch(`${API_BASE_URL}/locations/${id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify(locData)
-      });
-      const data = await res.json();
-      if (data.success) {
-        showToast("Cập nhật điểm đến thành công.");
-        await fetchLocations();
-        return true;
-      } else {
-        showToast(data.message, "error");
-        return false;
-      }
-    } catch (err) {
-      showToast("Lỗi kết nối khi cập nhật điểm đến.", "error");
-    }
+  const updateLocation = (id, locData) => {
+    setLocations((prev) => prev.map((l) => (l.id === Number(id) ? { ...l, ...locData } : l)));
+    showToast(`Cập nhật điểm đến thành công.`);
   };
 
-  const deleteLocation = async (id) => {
-    try {
-      const res = await fetch(`${API_BASE_URL}/locations/${id}`, {
-        method: "DELETE",
-        credentials: "include"
-      });
-      const data = await res.json();
-      if (data.success) {
-        showToast("Xóa điểm đến thành công.", "info");
-        await fetchLocations();
-        return true;
-      } else {
-        showToast(data.message, "warning");
-        return false;
-      }
-    } catch (err) {
-      showToast("Lỗi kết nối khi xóa điểm đến.", "error");
+  const deleteLocation = (id) => {
+    // Check if location has child locations
+    const hasChildren = locations.some((l) => l.parent_location_id === Number(id));
+    if (hasChildren) {
+      showToast('Không thể xóa điểm đến có điểm đến con trực thuộc. Vui lòng gán lại trước.', 'warning');
+      return false;
     }
+    // Check if accommodations reference this location
+    const hasAccommodations = accommodations.some((a) => a.location_id === Number(id));
+    if (hasAccommodations) {
+      showToast('Không thể xóa điểm đến đang liên kết với cơ sở lưu trú.', 'warning');
+      return false;
+    }
+    setLocations((prev) => prev.filter((l) => l.id !== Number(id)));
+    showToast('Xóa điểm đến thành công.', 'info');
+    return true;
   };
 
   // Accommodation CRUD
@@ -259,20 +279,6 @@ export function AdminProvider({ children }) {
     showToast('Cập nhật cơ sở lưu trú thành công.');
   };
 
-  const deleteAccommodation = (id) => {
-    // Check for associated active bookings
-    const activeBookings = bookings.filter((b) => b.accommodation_id === Number(id) && b.booking_status !== 'Cancelled');
-    if (activeBookings.length > 0) {
-      showToast(`Cannot delete accommodation with ${activeBookings.length} active booking(s).`, 'warning');
-      return false;
-    }
-    setAccommodations((prev) => prev.filter((a) => a.id !== Number(id)));
-    // Also remove associated room types
-    setRoomTypes((prev) => prev.filter((r) => r.accommodation_id !== Number(id)));
-    showToast('Accommodation deleted successfully.', 'info');
-    return true;
-  };
-
   // Room Type CRUD
   const addRoomType = (roomData) => {
     const newId = Math.max(...roomTypes.map((r) => r.id), 0) + 1;
@@ -283,21 +289,21 @@ export function AdminProvider({ children }) {
     const basePrice = Number(newRoom.base_price) || 1000000;
     const initialRates = (roomData.weekday_rates && Object.keys(roomData.weekday_rates).length > 0)
       ? DAYS_OF_WEEK.map((d) => ({
-          id: Date.now() + d.day,
-          room_type_id: newId,
-          day_of_week: d.day,
-          price: Number(roomData.weekday_rates[d.day]) || basePrice,
-          created_at: new Date().toISOString().replace('T', ' ').substring(0, 19),
-          updated_at: new Date().toISOString().replace('T', ' ').substring(0, 19)
-        }))
+        id: Date.now() + d.day,
+        room_type_id: newId,
+        day_of_week: d.day,
+        price: Number(roomData.weekday_rates[d.day]) || basePrice,
+        created_at: new Date().toISOString().replace('T', ' ').substring(0, 19),
+        updated_at: new Date().toISOString().replace('T', ' ').substring(0, 19)
+      }))
       : DAYS_OF_WEEK.map((d) => ({
-          id: Date.now() + d.day,
-          room_type_id: newId,
-          day_of_week: d.day,
-          price: d.isWeekend ? Math.round(basePrice * 1.15) : basePrice,
-          created_at: new Date().toISOString().replace('T', ' ').substring(0, 19),
-          updated_at: new Date().toISOString().replace('T', ' ').substring(0, 19)
-        }));
+        id: Date.now() + d.day,
+        room_type_id: newId,
+        day_of_week: d.day,
+        price: d.isWeekend ? Math.round(basePrice * 1.15) : basePrice,
+        created_at: new Date().toISOString().replace('T', ' ').substring(0, 19),
+        updated_at: new Date().toISOString().replace('T', ' ').substring(0, 19)
+      }));
 
     setRoomWeekdayRates((prev) => [...prev, ...initialRates]);
 
@@ -479,7 +485,8 @@ export function AdminProvider({ children }) {
         showToast(resData.message, "error");
         return null;
       }
-    } catch (err) {
+    } catch (error) {
+      console.error('Add attraction error:', error);
       showToast("Lỗi kết nối khi thêm điểm tham quan.", "error");
     }
   };
@@ -501,7 +508,8 @@ export function AdminProvider({ children }) {
         showToast(resData.message, "error");
         return false;
       }
-    } catch (err) {
+    } catch (error) {
+      console.error('Update attraction error:', error);
       showToast("Lỗi kết nối khi cập nhật điểm tham quan.", "error");
     }
   };
@@ -521,7 +529,8 @@ export function AdminProvider({ children }) {
         showToast(resData.message, "error");
         return false;
       }
-    } catch (err) {
+    } catch (error) {
+      console.error('Toggle attraction status error:', error);
       showToast("Lỗi kết nối khi đổi trạng thái.", "error");
     }
   };
@@ -541,7 +550,8 @@ export function AdminProvider({ children }) {
         showToast(resData.message, "warning");
         return { success: false, reason: "linked" };
       }
-    } catch (err) {
+    } catch (error) {
+      console.error('Delete attraction error:', error);
       showToast("Lỗi kết nối khi xóa điểm tham quan.", "error");
       return { success: false };
     }
@@ -650,14 +660,14 @@ export function AdminProvider({ children }) {
       prev.map((r) =>
         r.id === Number(id)
           ? {
-              ...r,
-              name: data.name !== undefined ? data.name.trim() : r.name,
-              start_date: data.start_date !== undefined ? data.start_date : r.start_date,
-              end_date: data.end_date !== undefined ? data.end_date : r.end_date,
-              description: data.description !== undefined ? data.description : r.description,
-              status: data.status ? data.status.toUpperCase() : r.status,
-              updated_at: nowTimestamp
-            }
+            ...r,
+            name: data.name !== undefined ? data.name.trim() : r.name,
+            start_date: data.start_date !== undefined ? data.start_date : r.start_date,
+            end_date: data.end_date !== undefined ? data.end_date : r.end_date,
+            description: data.description !== undefined ? data.description : r.description,
+            status: data.status ? data.status.toUpperCase() : r.status,
+            updated_at: nowTimestamp
+          }
           : r
       )
     );
@@ -767,13 +777,13 @@ export function AdminProvider({ children }) {
         return prev.map((item, idx) =>
           idx === matchIndex
             ? {
-                ...item,
-                accommodation_id: accId,
-                adjustment_type: adjType,
-                adjustment_value: adjVal,
-                price: calculatedPrice,
-                updated_at: nowTimestamp
-              }
+              ...item,
+              accommodation_id: accId,
+              adjustment_type: adjType,
+              adjustment_value: adjVal,
+              price: calculatedPrice,
+              updated_at: nowTimestamp
+            }
             : item
         );
       } else {
@@ -899,7 +909,7 @@ export function AdminProvider({ children }) {
   };
 
   const deleteAdminUser = (id) => {
-    if (Number(id) === currentUser.id) {
+    if (currentUser && Number(id) === Number(currentUser.id)) {
       showToast('Không thể xóa tài khoản quản trị đang đăng nhập.', 'warning');
       return false;
     }
@@ -912,20 +922,26 @@ export function AdminProvider({ children }) {
     <AdminContext.Provider
       value={{
         currentUser,
-        setCurrentUser,
         isAuthenticated,
+        isCheckingAuthen,
+
+        // Các hàm này hiện vẫn có thể giữ tạm
+        // cho những màn hình mock chưa chuyển sang AuthContext.
         login,
         logout,
         locations,
         addLocation,
         updateLocation,
         deleteLocation,
-    fetchLocations,
-    fetchAttractions,
         accommodations,
         addAccommodation,
         updateAccommodation,
-        deleteAccommodation,
+
+        accommodationsLoading,
+        accommodationsError,
+        accommodationsPagination,
+        fetchAccommodations,
+
         roomTypes,
         addRoomType,
         updateRoomType,
@@ -940,6 +956,7 @@ export function AdminProvider({ children }) {
         updateAttraction,
         toggleAttractionStatus,
         deleteAttraction,
+        // Phần Sidebar đang cần ba giá trị này
         bookings,
         updateBookingStatus,
         updatePaymentStatus,
@@ -980,6 +997,8 @@ export function AdminProvider({ children }) {
         toasts,
         showToast,
         removeToast
+
+        // ... các field còn lại giữ nguyên
       }}
     >
       {children}

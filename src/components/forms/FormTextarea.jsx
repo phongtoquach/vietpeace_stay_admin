@@ -29,7 +29,6 @@ export default function FormTextarea({
         value={value ?? ''}
         onChange={onChange}
         placeholder={placeholder}
-        required={required}
         rows={rows}
         disabled={disabled}
         className={`form-textarea ${error ? 'error' : ''}`}

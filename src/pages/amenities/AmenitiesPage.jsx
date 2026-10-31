@@ -411,7 +411,7 @@ const handleToggleStatus = async (item) => {
                         {categoryError}
                     </p>
                 )}
-                  
+
                   <FormSelect
                     label="Phạm vi áp dụng"
                     value={formData.amenity_scope}
@@ -431,7 +431,7 @@ const handleToggleStatus = async (item) => {
                         { value: 'both', label: 'Cả 2' }
                     ]}
                     placeholder="Select option..."
-                />            
+                />
                 {scopeError && (
                       <p style={{
                           color: '#DC2626',

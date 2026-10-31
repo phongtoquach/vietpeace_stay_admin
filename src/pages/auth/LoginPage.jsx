@@ -80,7 +80,7 @@ export default function LoginPage() {
             console.log("[validateForm] email không đúng email format ! set error msg !");
             newFormErrors.email = "Email không đúng định dạng";
         }
-        
+
 		// validate password
         let password = formData.password.trim();
         console.log("[validateForm] password : " + password);
@@ -103,7 +103,7 @@ export default function LoginPage() {
 
 	const handleSubmit = async (e) => {
 		e.preventDefault();
-		
+
 		console.log("[handleSubmit] Đang chạy hàm handleSubmit() !");
 
         const formIsValid = validateForm();
@@ -168,7 +168,7 @@ export default function LoginPage() {
 					</div>
 				</div>
 
-				
+
 				<h1 className="auth-title">Cổng thông tin quản trị</h1>
 				<p className="auth-subtitle">
 				Đăng nhập bằng tài khoản nhân sự nội bộ để quản lý đặt phòng và các cơ sở lưu trú.
@@ -187,7 +187,7 @@ export default function LoginPage() {
 							value={formData.email}
 							onChange={(e) => handleChangeInputValue(e)}
 							placeholder="ten@vietpeacestay.vn"/>
-						{ (formErrors.email) && 
+						{ (formErrors.email) &&
 							<span className="form-error-text">{formErrors.email}</span>
 						}
 					</div>
@@ -229,7 +229,7 @@ export default function LoginPage() {
 							>
 								{showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
 							</button>
-							{ (formErrors.password) && 
+							{ (formErrors.password) &&
 								<span className="form-error-text">{formErrors.password}</span>
 							}
 						</div>

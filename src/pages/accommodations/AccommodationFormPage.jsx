@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { useAdmin } from '../../context/AdminContext.jsx';
 import PageHeader from '../../components/common/PageHeader.jsx';
 import FormInput from '../../components/forms/FormInput.jsx';
 import FormSelect from '../../components/forms/FormSelect.jsx';
 import FormTextarea from '../../components/forms/FormTextarea.jsx';
 import ImageUpload from '../../components/forms/ImageUpload.jsx';
-import { WARDS_BY_PROVINCE } from '../../data/mockData.js';
+import { lookupsApi } from '../../api/lookups.js';
+import { accommodationsApi, buildImageUrl } from '../../api/accommodations.js';
 import {
   ArrowLeft,
   Save,
@@ -26,42 +26,216 @@ import {
 } from 'lucide-react';
 import resortDanangImg from '../../assets/images/resort_danang_1790825961463.jpg';
 
-// Helper to resolve province for any location in hierarchy
-export const getProvinceForLocation = (locationId, locations = []) => {
-  if (!locationId || !locations || !locations.length) return null;
-  let loc = locations.find((l) => Number(l.id) === Number(locationId));
-  if (!loc) return null;
-
-  let depth = 0;
-  while (loc && depth < 10) {
-    depth++;
-    if (loc.type === 'Province / City') {
-      return loc;
-    }
-    if (!loc.parent_location_id) {
-      return loc;
-    }
-    const parent = locations.find((l) => Number(l.id) === Number(loc.parent_location_id));
-    if (!parent || parent.type === 'Region') {
-      return loc;
-    }
-    loc = parent;
-  }
-  return null;
+// API /lookup/locations đã trả sẵn provinceId + provinceName cho từng điểm đến,
+// nên chỉ cần tra trực tiếp thay vì dò cây cha–con như dữ liệu mock trước đây.
+const getProvinceOfLocation = (locationId, locations = []) => {
+  if (!locationId || !locations.length) return null;
+  const loc = locations.find((l) => Number(l.id) === Number(locationId));
+  if (!loc || !loc.provinceId) return null;
+  return { id: Number(loc.provinceId), name: loc.provinceName };
 };
+
+function getStatusValue(status) {
+  if (typeof status === 'number') return status;
+
+  const normalized = String(status || '').toLowerCase();
+  if (normalized === 'bản nháp' || normalized === 'draft') return 0;
+  if (normalized === 'đang hoạt động' || normalized === 'active') return 1;
+  if (normalized === 'ngừng hoạt động' || normalized === 'inactive') return 2;
+
+  return 0;
+}
+
+// Backend trả lỗi theo key camelCase của payload API,
+// còn các input trong form dùng snake_case.
+const API_ERROR_KEY_MAP = {
+  name: 'name',
+  code: 'code',
+  typeId: 'type_id',
+  locationId: 'location_id',
+  wardId: 'ward_id',
+  addressLine: 'address',
+  shortDescription: 'short_description',
+  description: 'full_description',
+  phone: 'phone',
+  email: 'email',
+  websiteUrl: 'website',
+  starRating: 'star_rating',
+  checkInTime: 'checkin_time',
+  checkOutTime: 'checkout_time',
+  latitude: 'latitude',
+  longitude: 'longitude',
+  status: 'status',
+  images: 'images',
+  amenities: 'amenities',
+  attractions: 'attractions',
+};
+
+// Field nào thuộc tab nào, dùng để mở đúng tab khi backend báo lỗi.
+const FIELD_TAB_MAP = {
+  name: 'general',
+  code: 'general',
+  type_id: 'general',
+  star_rating: 'general',
+  status: 'general',
+  checkin_time: 'general',
+  checkout_time: 'general',
+  short_description: 'general',
+  full_description: 'general',
+  phone: 'general',
+  email: 'general',
+  website: 'general',
+  location_id: 'location',
+  ward_id: 'location',
+  address: 'location',
+  latitude: 'location',
+  longitude: 'location',
+  attractions: 'location',
+  amenities: 'amenities',
+  images: 'media',
+};
+
+// Đổi { shortDescription: "..." } -> { short_description: "..." }
+function normalizeApiErrors(apiErrors = {}) {
+  return Object.entries(apiErrors).reduce((result, [apiKey, message]) => {
+    result[API_ERROR_KEY_MAP[apiKey] || apiKey] = message;
+    return result;
+  }, {});
+}
+
+// Chọn tab chứa lỗi đầu tiên theo thứ tự tab trên UI.
+function resolveFirstErrorTab(formErrors = {}) {
+  const tabOrder = ['general', 'location', 'amenities', 'media'];
+  const tabs = Object.keys(formErrors)
+    .map((field) => FIELD_TAB_MAP[field])
+    .filter(Boolean);
+
+  if (tabs.length === 0) return 'general';
+  return tabs.sort((a, b) => tabOrder.indexOf(a) - tabOrder.indexOf(b))[0];
+}
+
+// DB quy ước lưu đường dẫn tương đối (/uploads/...).
+// State form giữ URL tuyệt đối để hiển thị, nên phải bỏ origin trước khi gửi API.
+function toRelativeImageUrl(url) {
+  if (!url) return url;
+  const match = String(url).match(/^https?:\/\/[^/]+(\/uploads\/.+)$/);
+  return match ? match[1] : url;
+}
+
+function toRelativeImageUrls(formData) {
+  return [
+    formData.cover_image,
+    ...(formData.gallery_images || []),
+  ]
+    .filter((url, index, all) => url && all.indexOf(url) === index)
+    .map(toRelativeImageUrl);
+}
+
+function toApiGeneralPayload(formData) {
+  return {
+    // Mã cơ sở lưu trú phải được gửi khi Sửa, nếu không backend giữ nguyên mã cũ.
+    code: String(formData.code || '').trim(),
+    name: formData.name,
+    typeId: Number(formData.type_id),
+    status: getStatusValue(formData.status),
+    locationId: Number(formData.location_id),
+    wardId: formData.ward_id ? Number(formData.ward_id) : null,
+    addressLine: formData.address || null,
+    shortDescription: formData.short_description || null,
+    description: formData.full_description || null,
+    phone: formData.phone || null,
+    email: formData.email || null,
+    websiteUrl: formData.website || null,
+    latitude: formData.latitude === '' ? null : Number(formData.latitude),
+    longitude: formData.longitude === '' ? null : Number(formData.longitude),
+    starRating: formData.star_rating === '' ? null : Number(formData.star_rating),
+    checkInTime: formData.checkin_time || null,
+    checkOutTime: formData.checkout_time || null,
+    isFeatured: Boolean(formData.featured),
+  };
+}
+
+function toApiCreatePayload(formData) {
+  const imageUrls = toRelativeImageUrls(formData);
+  const coverImageUrl = toRelativeImageUrl(formData.cover_image);
+
+  return {
+    // Backend dùng camelCase và cần mã cơ sở lưu trú khi tạo mới.
+    code: String(formData.code || '').trim(),
+    name: String(formData.name || '').trim(),
+
+    // type_id của UI phải đổi thành typeId dạng số cho API.
+    typeId: Number(formData.type_id),
+
+    // Trang Create luôn tạo bản nháp; đổi trạng thái do trang Sửa đảm nhận.
+    status: 0,
+    locationId: Number(formData.location_id),
+    wardId: formData.ward_id ? Number(formData.ward_id) : null,
+
+    addressLine: String(formData.address || '').trim() || null,
+    shortDescription: formData.short_description || null,
+    description: formData.full_description || null,
+
+    phone: formData.phone || null,
+    email: formData.email || null,
+    websiteUrl: formData.website || null,
+
+    latitude: formData.latitude === '' ? null : Number(formData.latitude),
+    longitude: formData.longitude === '' ? null : Number(formData.longitude),
+    starRating:
+      formData.star_rating === '' ? null : Number(formData.star_rating),
+
+    checkInTime: formData.checkin_time || null,
+    checkOutTime: formData.checkout_time || null,
+    isFeatured: Boolean(formData.featured),
+
+    // Ảnh bìa phải được đánh dấu rõ để backend cho phép trạng thái ACTIVE.
+    images: imageUrls.map((imageUrl) => ({
+      imageUrl,
+      isCover: imageUrl === coverImageUrl,
+    })),
+
+    // Backend đọc key "amenities" dạng [{ amenityId }] (spec 5.2).
+    // Nếu gửi "amenityIds" thì service bỏ qua im lặng → tiện nghi không được ghi.
+    amenities: (formData.amenity_ids || []).map((amenityId) => ({
+      amenityId: Number(amenityId),
+    })),
+
+    // Backend nhận distanceMeters, không nhận distance + distance_unit
+    // theo format cũ của UI.
+    attractions: (formData.attractions || []).map((item) => ({
+      attractionId: Number(item.attraction_id),
+      distanceMeters: Number(item.distance_meters) || 0,
+      note: String(item.notes || '').trim() || null,
+    })),
+  }
+}
+
+function toApiRelatedPayload(formData) {
+  const imageUrls = toRelativeImageUrls(formData);
+  const coverImageUrl = toRelativeImageUrl(formData.cover_image);
+
+  return {
+    images: imageUrls.map((imageUrl) => ({
+      imageUrl,
+      isCover: imageUrl === coverImageUrl,
+    })),
+    // Cùng shape với create để backend replaceAmenities xử lý được.
+    amenities: (formData.amenity_ids || []).map((amenityId) => ({
+      amenityId: Number(amenityId),
+    })),
+    attractions: (formData.attractions || []).map((item) => ({
+      attractionId: Number(item.attraction_id),
+      distanceMeters: Number(item.distance_meters) || 0,
+      note: String(item.notes || '').trim() || null,
+    })),
+  };
+}
 
 export default function AccommodationFormPage() {
   const { id } = useParams();
   const isEdit = Boolean(id);
   const navigate = useNavigate();
-  const {
-    accommodations,
-    locations,
-    amenities,
-    attractions,
-    addAccommodation,
-    updateAccommodation
-  } = useAdmin();
 
   // Active form section tab (4 tabs total, NO separate attraction tab)
   const [activeTab, setActiveTab] = useState('general');
@@ -70,10 +244,12 @@ export default function AccommodationFormPage() {
   const [formData, setFormData] = useState({
     name: '',
     code: '',
-    type: 'Hotel',
+    type_id: '',
+    type: '',
     short_description: '',
     full_description: '',
     address: '',
+    ward_id: '',
     ward: '',
     location_id: '',
     latitude: '',
@@ -84,90 +260,270 @@ export default function AccommodationFormPage() {
     checkin_time: '14:00',
     checkout_time: '12:00',
     star_rating: 4,
-    status: 'Active',
+    status: 'Draft',
     featured: false,
-    cover_image: resortDanangImg,
-    gallery_images: [resortDanangImg],
+    cover_image: '',
+    gallery_images: [],
     amenity_ids: [],
     attractions: []
   });
 
   const [errors, setErrors] = useState({});
 
-  // Populate data when in edit mode without triggering user location change wiping
+  // Đếm số lượt upload đang chạy. Khi > 0, preview ảnh vẫn là blob: tạm
+  // nên phải chặn submit để URL blob không bị ghi xuống DB.
+  const [uploadingCount, setUploadingCount] = useState(0);
+
+  // Dữ liệu danh mục lấy từ backend (thay cho mock trước đây).
+  const [lookupLocations, setLookupLocations] = useState([]);
+  const [lookupWards, setLookupWards] = useState([]);
+  const [lookupAmenities, setLookupAmenities] = useState([]);
+  const [lookupAttractions, setLookupAttractions] = useState([]);
+  const [lookupError, setLookupError] = useState(null);
+  const [isLoadingLookups, setIsLoadingLookups] = useState(false);
+  const uploadImages = async (files, field, multiple = false) => {
+    console.group("[AccommodationFormPage.uploadImages]");
+    console.log("[1] bắt đầu upload", files.length, "ảnh cho trường", field);
+
+    // Giữ giá trị cũ để khôi phục nếu upload lỗi (vd ảnh bìa đang có trên server).
+    const previousValue = formData[field];
+    const previews = files.map((file) => URL.createObjectURL(file));
+    setUploadingCount((count) => count + 1);
+
+    // Hiển thị preview ngay, không bắt người dùng chờ request upload hoàn tất.
+    setFormData((prev) => ({
+      ...prev,
+      [field]: multiple ? [...(prev[field] || []), ...previews] : previews[0] || '',
+    }));
+
+    try {
+      const urls = await Promise.all(files.map((file) => accommodationsApi.uploadImage(file)));
+      setFormData((prev) => ({
+        ...prev,
+        [field]: multiple ? [...(prev[field] || []).filter((url) => !previews.includes(url)), ...urls] : urls[0] || '',
+      }));
+      previews.forEach((url) => URL.revokeObjectURL(url));
+      console.log("[2] upload xong, nhận URL backend:", urls);
+    } catch (error) {
+      // Upload lỗi thì gỡ blob khỏi form, tránh submit nhầm URL blob:.
+      setFormData((prev) => ({
+        ...prev,
+        [field]: multiple
+          ? (prev[field] || []).filter((url) => !previews.includes(url))
+          : previousValue || '',
+      }));
+      previews.forEach((url) => URL.revokeObjectURL(url));
+      console.error("[3] upload thất bại:", error);
+      setErrors((prev) => ({ ...prev, images: error.message || 'Không thể tải ảnh lên.' }));
+    } finally {
+      // Luôn giảm bộ đếm kể cả thành công hay lỗi để không kẹt trạng thái chặn submit.
+      setUploadingCount((count) => count - 1);
+      console.groupEnd();
+    }
+  };
+
+  // Form Sửa phải đọc detail thật vì list chỉ có summary và AdminContext còn giữ mock.
   useEffect(() => {
-    if (isEdit) {
-      const existing = accommodations.find((a) => a.id === Number(id));
-      if (existing) {
-        setFormData({
-          ...existing,
-          ward: existing.ward || '',
-          cover_image: existing.cover_image || resortDanangImg,
-          gallery_images: existing.gallery_images || [existing.cover_image || resortDanangImg],
-          amenity_ids: existing.amenity_ids || [],
-          attractions: existing.attractions || []
-        });
+    if (!isEdit) return;
+
+    let cancelled = false;
+
+    async function loadAccommodationDetail() {
+      try {
+        const payload = await accommodationsApi.getDetail(id);
+
+        if (cancelled) return;
+
+        const detail = payload.data;
+        const images = detail.images || [];
+        const mappedFormData = {
+          name: detail.name || '',
+          code: detail.code || '',
+          type_id: detail.type?.id || '',
+          type: detail.type?.name || detail.type?.code || '',
+          short_description: detail.shortDescription || '',
+          full_description: detail.description || '',
+          address: detail.addressLine || '',
+          location_id: detail.location?.id || '',
+          ward_id: detail.ward?.id || '',
+          ward: detail.ward?.name || '',
+          latitude: detail.latitude ?? '',
+          longitude: detail.longitude ?? '',
+          phone: detail.phone || '',
+          email: detail.email || '',
+          website: detail.websiteUrl || '',
+          checkin_time: detail.checkInTime || '14:00',
+          checkout_time: detail.checkOutTime || '12:00',
+          star_rating: detail.starRating ?? '',
+          status: detail.status ?? 0,
+          featured: Boolean(detail.isFeatured),
+          cover_image: buildImageUrl(detail.coverImageUrl) || '',
+          gallery_images: images
+            .filter((image) => !image.isCover)
+            .map((image) => buildImageUrl(image.imageUrl)),
+          amenity_ids: (detail.amenities || []).map(
+            (amenity) => amenity.amenityId || amenity.id,
+          ),
+          attractions: (detail.attractions || []).map((attraction) => ({
+            attraction_id: attraction.attractionId,
+            distance_meters: attraction.distanceMeters || 0,
+            distance_unit: 'm',
+            distance: attraction.distanceMeters || 0,
+            notes: attraction.note || '',
+          })),
+        };
+
+        setFormData(mappedFormData);
+      } catch (error) {
+        if (!cancelled) {
+          console.error('[ERROR] Không tải được detail để sửa:', {
+            message: error.message,
+            status: error.status,
+            errorCode: error.errorCode,
+          });
+          setErrors({ form: error.message });
+        }
       }
     }
-  }, [id, isEdit, accommodations]);
 
-  // Hierarchical and contextual location options for "Điểm đến" dropdown
-  const locationSelectOptions = useMemo(() => {
-    return locations
-      .filter((loc) => loc.type !== 'Region')
-      .map((loc) => {
-        const prov = getProvinceForLocation(loc.id, locations);
-        let label = loc.name;
-        if (prov && prov.id !== loc.id) {
-          label = `${loc.name} (${prov.name})`;
-        } else {
-          label = loc.name;
+    loadAccommodationDetail();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [id, isEdit]);
+
+  // Điểm đến + tiện nghi: chỉ cần nạp một lần khi mở form.
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadStaticLookups() {
+      setIsLoadingLookups(true);
+      setLookupError(null);
+
+      try {
+        const [locationItems, amenityItems] = await Promise.all([
+          lookupsApi.getLocations(),
+          lookupsApi.getAmenities('accommodation')
+        ]);
+
+        if (cancelled) return;
+
+        setLookupLocations(locationItems);
+        setLookupAmenities(
+          amenityItems.map((item) => ({
+            id: item.id,
+            name: item.name,
+            category: item.categoryName || 'Khác'
+          }))
+        );
+      } catch (error) {
+        if (!cancelled) {
+          console.error('[ERROR] Không nạp được lookup tĩnh:', error);
+          setLookupError(error.message || 'Không tải được danh mục điểm đến / tiện nghi.');
         }
-        return {
-          value: String(loc.id),
-          label: label
-        };
-      })
+      } finally {
+        if (!cancelled) {
+          setIsLoadingLookups(false);
+        }
+      }
+    }
+
+    loadStaticLookups();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Điểm đến hợp lệ → suy ra tỉnh/thành (API đã trả sẵn provinceId + provinceName).
+  const currentProvince = useMemo(
+    () => getProvinceOfLocation(formData.location_id, lookupLocations),
+    [formData.location_id, lookupLocations]
+  );
+
+  // Đổi điểm đến → nạp lại phường/xã theo tỉnh và điểm tham quan theo điểm đến.
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadLocationLookups() {
+      const locationId = formData.location_id;
+      const provinceId = currentProvince ? currentProvince.id : null;
+
+      if (!locationId) {
+        setLookupWards([]);
+        setLookupAttractions([]);
+        return;
+      }
+
+      try {
+        const [wardItems, attractionItems] = await Promise.all([
+          lookupsApi.getWards(provinceId),
+          lookupsApi.getAttractions(Number(locationId), true)
+        ]);
+
+        if (cancelled) return;
+
+        setLookupWards(wardItems);
+        setLookupAttractions(
+          attractionItems.map((item) => ({
+            id: item.id,
+            name: item.name,
+            address: item.addressLine,
+            image: item.imageUrl,
+            is_active: Boolean(item.isActive)
+          }))
+        );
+        setLookupError(null);
+      } catch (error) {
+        if (!cancelled) {
+          console.error('[ERROR] Không nạp được lookup theo điểm đến:', error);
+          setLookupWards([]);
+          setLookupAttractions([]);
+          setLookupError(error.message || 'Không tải được phường/xã hoặc điểm tham quan.');
+        }
+      }
+    }
+
+    loadLocationLookups();
+    return () => {
+      cancelled = true;
+    };
+  }, [formData.location_id, currentProvince]);
+
+  // "Điểm đến" dropdown: nhãn kèm tỉnh/thành để người dùng phân biệt.
+  const locationSelectOptions = useMemo(() => {
+    return lookupLocations
+      .map((loc) => ({
+        value: String(loc.id),
+        label: loc.provinceName ? `${loc.name} (${loc.provinceName})` : loc.name
+      }))
       .sort((a, b) => a.label.localeCompare(b.label, 'vi'));
-  }, [locations]);
+  }, [lookupLocations]);
 
-  // Determine Province for current selected location
-  const currentProvince = useMemo(() => {
-    return getProvinceForLocation(formData.location_id, locations);
-  }, [formData.location_id, locations]);
+  // Phường/xã thuộc tỉnh/thành của điểm đến đang chọn.
+  const availableWards = lookupWards;
 
-  // Wards belonging to current province
-  const availableWards = useMemo(() => {
-    if (!currentProvince) return [];
-    return WARDS_BY_PROVINCE[currentProvince.id] || [];
-  }, [currentProvince]);
-
-  // Attractions assigned to selected location
+  // Điểm tham quan thuộc điểm đến đang chọn.
+  // BE đã lọc theo locationId; ở đây chỉ giấu điểm ngừng hoạt động nếu chưa liên kết.
   const locationAttractions = useMemo(() => {
-    if (!formData.location_id) return [];
-    const locId = Number(formData.location_id);
-
-    return attractions.filter((att) => {
-      const matchesLoc = Number(att.location_id) === locId;
-      if (!matchesLoc) return false;
+    return lookupAttractions.filter((att) => {
       const isAlreadyLinked = (formData.attractions || []).some(
         (a) => Number(a.attraction_id) === Number(att.id)
       );
-      // Offer active attractions for new selections. Keep inactive attractions visible only if already linked.
       return att.is_active || isAlreadyLinked;
     });
-  }, [formData.location_id, attractions, formData.attractions]);
+  }, [lookupAttractions, formData.attractions]);
 
   // Group amenities by category
   const amenitiesByCategory = useMemo(() => {
     const grouped = {};
-    amenities.forEach((item) => {
+    lookupAmenities.forEach((item) => {
       const cat = item.category || 'Khác';
       if (!grouped[cat]) grouped[cat] = [];
       grouped[cat].push(item);
     });
     return grouped;
-  }, [amenities]);
+  }, [lookupAmenities]);
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -180,43 +536,47 @@ export default function AccommodationFormPage() {
     }
   };
 
-  // Location selection change handler with safety check & confirmation
+  // Đổi điểm đến không hỏi xác nhận; dữ liệu phụ thuộc sẽ được nạp lại tự động.
   const handleLocationChange = (e) => {
     const newLocationId = e.target.value;
     const newIdStr = String(newLocationId);
     if (newIdStr === String(formData.location_id)) return;
 
-    // Check if attractions are already linked or have edits
-    const hasLinkedAttractions = (formData.attractions || []).length > 0;
-    if (hasLinkedAttractions) {
-      const confirmed = window.confirm(
-        'Bạn có chắc chắn muốn thay đổi điểm đến? Danh sách các điểm tham quan đã chọn cho điểm đến hiện tại sẽ bị xóa để tải theo điểm đến mới.'
-      );
-      if (!confirmed) {
-        return; // Retain previous selection
-      }
-    }
-
-    // Determine if province changed
-    const oldProv = getProvinceForLocation(formData.location_id, locations);
-    const newProv = getProvinceForLocation(newLocationId, locations);
-
-    // Check if current ward belongs to new province
-    const newWards = newProv ? (WARDS_BY_PROVINCE[newProv.id] || []) : [];
-    const isWardInNewProvince = newWards.some((w) => w.name === formData.ward);
-
     setFormData((prev) => ({
       ...prev,
       location_id: newLocationId,
-      // Clear ward if it does not belong to new province
-      ward: isWardInNewProvince ? prev.ward : '',
-      // Clear attractions belonging to previous location
+      // Điểm đến đổi thì reset phường/xã vì có thể khác tỉnh.
+      ward_id: '',
+      ward: '',
       attractions: []
     }));
 
-    if (errors.location_id) {
-      setErrors((prev) => ({ ...prev, location_id: null }));
+    if (errors.location_id || errors.ward_id || errors.wardId) {
+      setErrors((prev) => ({
+        ...prev,
+        location_id: null,
+        ward_id: null,
+        wardId: null,
+      }));
     }
+  };
+
+  // Phường/xã lưu cả id (BE cần wardId) và tên (để hiển thị).
+  const handleWardChange = (e) => {
+    const wardId = e.target.value;
+    const selected = availableWards.find((w) => String(w.id) === wardId);
+
+    setFormData((prev) => ({
+      ...prev,
+      ward_id: wardId,
+      ward: selected ? selected.name : ''
+    }));
+
+    setErrors((prev) => ({
+      ...prev,
+      ward_id: null,
+      wardId: null,
+    }));
   };
 
   // Toggle nearby attraction selection
@@ -282,49 +642,86 @@ export default function AccommodationFormPage() {
     });
   };
 
-  const validate = () => {
-    const newErrors = {};
-    if (!formData.name.trim()) newErrors.name = 'Vui lòng nhập tên cơ sở lưu trú.';
-    if (!formData.code.trim()) newErrors.code = 'Vui lòng nhập mã cơ sở lưu trú.';
-    if (!formData.location_id) newErrors.location_id = 'Vui lòng chọn điểm đến trực thuộc.';
-    if (!formData.address.trim()) newErrors.address = 'Vui lòng nhập địa chỉ cụ thể.';
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
-
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!validate()) {
-      if (!formData.name.trim() || !formData.code.trim()) {
-        setActiveTab('general');
-      } else if (!formData.location_id || !formData.address.trim()) {
-        setActiveTab('location');
-      }
+
+    // Ảnh còn upload thì preview là blob:, chưa có URL backend để lưu.
+    if (uploadingCount > 0) {
+      setErrors((prev) => ({ ...prev, images: 'Ảnh đang tải lên, vui lòng đợi hoàn tất.' }));
+      setActiveTab('media');
       return;
     }
 
-    const payload = {
-      ...formData,
-      location_id: Number(formData.location_id),
-      star_rating: Number(formData.star_rating),
-      attractions: (formData.attractions || []).map((a) => ({
-        attraction_id: Number(a.attraction_id),
-        distance: Number(a.distance) || 0,
-        distance_unit: a.distance_unit || 'km',
-        distance_meters:
-          (a.distance_unit || 'km') === 'km'
-            ? Math.round((Number(a.distance) || 0) * 1000)
-            : Math.round(Number(a.distance) || 0),
-        notes: (a.notes || '').trim()
-      }))
-    };
+    const clientErrors = {};
+    if (!String(formData.address || '').trim()) {
+      clientErrors.address = 'Vui lòng nhập địa chỉ.';
+    }
+    if (!formData.ward_id) {
+      clientErrors.ward_id = 'Vui lòng chọn phường/xã.';
+    }
+    if (!isEdit && !String(formData.short_description || '').trim()) {
+      clientErrors.short_description = 'Vui lòng nhập mô tả tóm tắt.';
+    }
+    if (Object.keys(clientErrors).length > 0) {
+      setErrors((prev) => ({ ...prev, ...clientErrors }));
+      // Lỗi địa chỉ/phường nằm ở tab location, mô tả nằm ở general.
+      setActiveTab(resolveFirstErrorTab(clientErrors));
+      return;
+    }
 
-    if (isEdit) {
-      updateAccommodation(id, payload);
-      navigate(`/admin/accommodations/${id}`);
-    } else {
-      const created = addAccommodation(payload);
-      navigate(`/admin/accommodations/${created.id}`);
+    const payload = isEdit
+      ? { ...toApiGeneralPayload(formData), ...toApiRelatedPayload(formData) }
+      : {
+        ...formData,
+        location_id: Number(formData.location_id),
+        ward_id: formData.ward_id ? Number(formData.ward_id) : null,
+        star_rating: Number(formData.star_rating),
+        attractions: (formData.attractions || []).map((a) => ({
+          attraction_id: Number(a.attraction_id),
+          distance: Number(a.distance) || 0,
+          distance_unit: a.distance_unit || 'km',
+          distance_meters:
+            (a.distance_unit || 'km') === 'km'
+              ? Math.round(Number(a.distance) * 1000)
+              : Math.round(Number(a.distance) || 0),
+          notes: (a.notes || '').trim()
+        }))
+      };
+
+    console.group("[AccommodationFormPage.handleSubmit]");
+    console.log("[1] gửi", isEdit ? "PUT" : "POST", "| trạng thái:", getStatusValue(formData.status));
+
+    try {
+      if (isEdit) {
+        await accommodationsApi.update(id, payload);
+        console.log("[2] PUT thành công, id =", id);
+        navigate(`/admin/accommodations/${id}`);
+      } else {
+        const createPayload = toApiCreatePayload(formData);
+        const created = await accommodationsApi.create(createPayload);
+        console.log("[2] POST thành công, id =", created.id);
+        navigate(`/admin/accommodations/${created.id}`);
+      }
+    } catch (error) {
+      console.error("[3] lưu form thất bại:", {
+        message: error.message,
+        status: error.status,
+        errorCode: error.errorCode,
+        errors: error.errors,
+      });
+
+      if (error.errors && Object.keys(error.errors).length > 0) {
+        // Đổi key API -> key input rồi mở tab chứa lỗi đầu tiên.
+        const fieldErrors = normalizeApiErrors(error.errors);
+        setErrors(fieldErrors);
+        setActiveTab(resolveFirstErrorTab(fieldErrors));
+      } else {
+        // 401/500/INVALID_STATE... không gắn field → hiện banner chung.
+        setErrors({ form: error.message });
+        setActiveTab('general');
+      }
+    } finally {
+      console.groupEnd();
     }
   };
 
@@ -342,8 +739,16 @@ export default function AccommodationFormPage() {
             <Link to="/admin/accommodations" className="btn btn-secondary">
               <ArrowLeft size={14} /> Quay lại danh sách
             </Link>
-            <button type="button" onClick={handleSubmit} className="btn btn-primary">
-              <Save size={14} /> {isEdit ? 'Lưu thay đổi' : 'Tạo cơ sở lưu trú'}
+            <button
+              type="button"
+              onClick={handleSubmit}
+              className="btn btn-primary"
+              disabled={uploadingCount > 0}
+            >
+              <Save size={14} />{' '}
+              {uploadingCount > 0
+                ? 'Đang tải ảnh...'
+                : isEdit ? 'Lưu thay đổi' : 'Tạo cơ sở lưu trú'}
             </button>
           </div>
         }
@@ -382,6 +787,13 @@ export default function AccommodationFormPage() {
       </div>
 
       <form onSubmit={handleSubmit}>
+        {errors.form && (
+          <div className="admin-card" style={{ borderColor: '#E53E3E', marginBottom: '12px' }}>
+            <div className="admin-card-body" style={{ color: '#C53030', fontSize: '13px' }}>
+              {errors.form}
+            </div>
+          </div>
+        )}
         {/* Tab 1: General Information & Contact */}
         {activeTab === 'general' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -415,14 +827,16 @@ export default function AccommodationFormPage() {
 
                   <FormSelect
                     label="Loại hình lưu trú"
-                    name="type"
-                    value={formData.type}
+                    name="type_id"
+                    value={formData.type_id}
                     onChange={handleChange}
+                    placeholder="Chọn loại hình lưu trú"
                     options={[
-                      { value: 'Hotel', label: 'Khách sạn (Hotel)' },
-                      { value: 'Resort', label: 'Khu nghỉ dưỡng (Resort)' },
-                      { value: 'Homestay', label: 'Homestay' }
+                      { value: 1, label: 'Khách sạn (Hotel)' },
+                      { value: 2, label: 'Khu nghỉ dưỡng (Resort)' },
+                      { value: 3, label: 'Homestay' }
                     ]}
+                    error={errors.type_id}
                     required
                   />
 
@@ -438,18 +852,23 @@ export default function AccommodationFormPage() {
                       { value: 4, label: '4 Sao' },
                       { value: 5, label: '5 Sao (Cao cấp)' }
                     ]}
+                    error={errors.star_rating}
                   />
 
-                  <FormSelect
-                    label="Trạng thái hoạt động"
-                    name="status"
-                    value={formData.status}
-                    onChange={handleChange}
-                    options={[
-                      { value: 'Active', label: 'Đang hoạt động (Mở nhận đặt phòng)' },
-                      { value: 'Inactive', label: 'Ngừng hoạt động (Tạm đóng bảo trì)' }
-                    ]}
-                  />
+                  {isEdit && (
+                    <FormSelect
+                      label="Trạng thái hoạt động"
+                      name="status"
+                      value={formData.status}
+                      onChange={handleChange}
+                      options={[
+                        { value: 0, label: 'Bản nháp' },
+                        { value: 1, label: 'Đang hoạt động (Mở nhận đặt phòng)' },
+                        { value: 2, label: 'Ngừng hoạt động (Tạm đóng bảo trì)' }
+                      ]}
+                      error={errors.status}
+                    />
+                  )}
 
                   <div className="form-group" style={{ justifyContent: 'center' }}>
                     <label className="form-checkbox-label" style={{ marginTop: '16px' }}>
@@ -469,6 +888,7 @@ export default function AccommodationFormPage() {
                     type="time"
                     value={formData.checkin_time}
                     onChange={handleChange}
+                    error={errors.checkin_time}
                   />
 
                   <FormInput
@@ -477,6 +897,7 @@ export default function AccommodationFormPage() {
                     type="time"
                     value={formData.checkout_time}
                     onChange={handleChange}
+                    error={errors.checkout_time}
                   />
 
                   <div className="col-span-full">
@@ -486,6 +907,8 @@ export default function AccommodationFormPage() {
                       value={formData.short_description}
                       onChange={handleChange}
                       rows={2}
+                      required
+                      error={errors.short_description}
                       placeholder="Mô tả tóm tắt 1-2 câu giới thiệu điểm nhấn cơ sở..."
                     />
                   </div>
@@ -497,6 +920,7 @@ export default function AccommodationFormPage() {
                       value={formData.full_description}
                       onChange={handleChange}
                       rows={5}
+                      error={errors.full_description}
                       placeholder="Mô tả toàn diện về khuôn viên, phong cách thiết kế, trải nghiệm nghỉ dưỡng..."
                     />
                   </div>
@@ -516,6 +940,7 @@ export default function AccommodationFormPage() {
                     name="phone"
                     value={formData.phone}
                     onChange={handleChange}
+                    error={errors.phone}
                     placeholder="+84 236 388 9999"
                   />
 
@@ -525,6 +950,7 @@ export default function AccommodationFormPage() {
                     type="email"
                     value={formData.email}
                     onChange={handleChange}
+                    error={errors.email}
                     placeholder="danang.resort@vietpeacestay.vn"
                   />
 
@@ -534,6 +960,7 @@ export default function AccommodationFormPage() {
                     type="url"
                     value={formData.website}
                     onChange={handleChange}
+                    error={errors.website}
                     placeholder="https://vietpeacestay.vn/resorts/danang"
                   />
                 </div>
@@ -567,7 +994,6 @@ export default function AccommodationFormPage() {
                       }}
                       value={formData.location_id || ''}
                       onChange={handleLocationChange}
-                      required
                     >
                       <option value="">-- Chọn điểm đến --</option>
                       {locationSelectOptions.map((opt) => (
@@ -584,6 +1010,16 @@ export default function AccommodationFormPage() {
                     <span style={{ fontSize: '12px', color: '#6B7280', marginTop: '4px', display: 'block' }}>
                       Chọn điểm đến để hệ thống tự động xác định Tỉnh/thành, nạp danh sách Phường/xã và các điểm tham quan lân cận trực thuộc.
                     </span>
+                    {isLoadingLookups && (
+                      <span style={{ fontSize: '12px', color: '#2563EB', marginTop: '4px', display: 'block' }}>
+                        Đang tải danh mục điểm đến / tiện nghi từ server...
+                      </span>
+                    )}
+                    {lookupError && (
+                      <span style={{ fontSize: '12px', color: '#B91C1C', marginTop: '4px', display: 'block' }}>
+                        {lookupError}
+                      </span>
+                    )}
                   </div>
 
                   {/* 2. Read-only "Tỉnh/thành: {province name}" text */}
@@ -647,30 +1083,38 @@ export default function AccommodationFormPage() {
                     </label>
                     <select
                       id="field-ward"
-                      name="ward"
+                      name="ward_id"
                       className="filter-select"
                       style={{ width: '100%', height: '40px' }}
-                      value={formData.ward || ''}
-                      onChange={handleChange}
+                      value={formData.ward_id || ''}
+                      onChange={handleWardChange}
                       disabled={!formData.location_id || availableWards.length === 0}
                     >
                       <option value="">
                         {!formData.location_id
                           ? '-- Vui lòng chọn điểm đến trước --'
                           : availableWards.length === 0
-                          ? '-- Không có dữ liệu phường/xã --'
-                          : '-- Chọn phường/xã --'}
+                            ? '-- Không có dữ liệu phường/xã --'
+                            : '-- Chọn phường/xã --'}
                       </option>
                       {availableWards.map((w) => (
-                        <option key={w.id} value={w.name}>
+                        <option key={w.id} value={String(w.id)}>
                           {w.name}
                         </option>
                       ))}
-                      {/* Preserve custom ward if not in pre-defined list */}
-                      {formData.ward && !availableWards.some((w) => w.name === formData.ward) && (
-                        <option value={formData.ward}>{formData.ward}</option>
-                      )}
+                      {/* Giữ lại phường/xã đã lưu nếu danh sách mới chưa tải xong */}
+                      {formData.ward_id &&
+                        !availableWards.some((w) => String(w.id) === String(formData.ward_id)) && (
+                          <option value={String(formData.ward_id)}>
+                            {formData.ward || 'Phường/xã đã chọn'}
+                          </option>
+                        )}
                     </select>
+                    {errors.ward_id && (
+                      <span style={{ color: '#B91C1C', fontSize: '12px', marginTop: '4px', display: 'block' }}>
+                        {errors.ward_id}
+                      </span>
+                    )}
                     <span style={{ fontSize: '11.5px', color: '#6B7280', marginTop: '4px', display: 'block' }}>
                       Danh sách phường/xã phụ thuộc vào Tỉnh/thành của điểm đến đã chọn.
                     </span>
@@ -692,6 +1136,7 @@ export default function AccommodationFormPage() {
                     name="latitude"
                     value={formData.latitude}
                     onChange={handleChange}
+                    error={errors.latitude}
                     placeholder="VD: 16.0748"
                     helperText="Tọa độ GPS độc lập của cơ sở lưu trú."
                   />
@@ -701,6 +1146,7 @@ export default function AccommodationFormPage() {
                     name="longitude"
                     value={formData.longitude}
                     onChange={handleChange}
+                    error={errors.longitude}
                     placeholder="VD: 108.2467"
                     helperText="Tọa độ GPS độc lập của cơ sở lưu trú."
                   />
@@ -732,6 +1178,9 @@ export default function AccommodationFormPage() {
               </div>
 
               <div className="admin-card-body">
+                {errors.attractions && (
+                  <span className="form-error-text">{errors.attractions}</span>
+                )}
                 {!formData.location_id ? (
                   <div
                     style={{
@@ -989,6 +1438,9 @@ export default function AccommodationFormPage() {
               </span>
             </div>
             <div className="admin-card-body">
+              {errors.amenities && (
+                <span className="form-error-text">{errors.amenities}</span>
+              )}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                 {Object.entries(amenitiesByCategory).map(([category, items]) => (
                   <div key={category} style={{ borderBottom: '1px solid #F3F4F6', paddingBottom: '14px' }}>
@@ -1033,11 +1485,15 @@ export default function AccommodationFormPage() {
               <div className="admin-card-title">Hình ảnh & Bộ sưu tập ảnh</div>
             </div>
             <div className="admin-card-body">
+              {errors.images && (
+                <span className="form-error-text">{errors.images}</span>
+              )}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                 <ImageUpload
                   label="Ảnh bìa chính (Hero Banner)"
                   images={formData.cover_image ? [formData.cover_image] : []}
                   onChange={(imgs) => setFormData((prev) => ({ ...prev, cover_image: imgs[0] || '' }))}
+                  onFilesSelected={(files) => uploadImages(files, 'cover_image')}
                   multiple={false}
                   helperText="Ảnh chất lượng cao hiển thị ở đầu trang chi tiết, danh sách tìm kiếm và hóa đơn."
                 />
@@ -1046,6 +1502,7 @@ export default function AccommodationFormPage() {
                   label="Bộ sưu tập ảnh khuôn viên (Nhiều ảnh)"
                   images={formData.gallery_images || []}
                   onChange={(imgs) => setFormData((prev) => ({ ...prev, gallery_images: imgs }))}
+                  onFilesSelected={(files) => uploadImages(files, 'gallery_images', true)}
                   multiple={true}
                   helperText="Tải lên ảnh ngoại cảnh, sảnh đón tiếp, hồ bơi, nhà hàng và cảnh quan xung quanh."
                 />
@@ -1059,8 +1516,11 @@ export default function AccommodationFormPage() {
           <Link to="/admin/accommodations" className="btn btn-secondary">
             Hủy
           </Link>
-          <button type="submit" className="btn btn-primary">
-            <Save size={14} /> {isEdit ? 'Lưu thay đổi' : 'Tạo cơ sở lưu trú'}
+          <button type="submit" className="btn btn-primary" disabled={uploadingCount > 0}>
+            <Save size={14} />{' '}
+            {uploadingCount > 0
+              ? 'Đang tải ảnh...'
+              : isEdit ? 'Lưu thay đổi' : 'Tạo cơ sở lưu trú'}
           </button>
         </div>
       </form>

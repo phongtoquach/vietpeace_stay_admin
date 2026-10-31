@@ -453,7 +453,7 @@ input, select, textarea {
 
 .filter-group-wide {
   min-width: 220px;
-  flex: 1 1 300px;
+  flex: 1;
 }
 
 .filter-label {
@@ -605,6 +605,28 @@ input, select, textarea {
 .empty-state-desc {
   font-size: 13px;
   margin-bottom: 14px;
+}
+
+/* Thanh xám nhấp nháy đại diện cho nội dung đang chờ API */
+.skeleton-line {
+  height: 12px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #f3f4f6 25%, #e5e7eb 37%, #f3f4f6 63%);
+  background-size: 400% 100%;
+  animation: skeleton-shimmer 1.2s ease infinite;
+}
+
+.skeleton-line-sm {
+  width: 60%;
+}
+
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0 50%;
+  }
 }
 
 /* Bộ lọc riêng trang quản lý tiện nghi */
