@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { useAdmin } from '../../context/AdminContext.jsx';
 import PageHeader from '../../components/common/PageHeader.jsx';
 import FormInput from '../../components/forms/FormInput.jsx';
 import FormSelect from '../../components/forms/FormSelect.jsx';
@@ -47,8 +46,95 @@ function getStatusValue(status) {
   return 0;
 }
 
+// Backend trả lỗi theo key camelCase của payload API,
+// còn các input trong form dùng snake_case.
+const API_ERROR_KEY_MAP = {
+  name: 'name',
+  code: 'code',
+  typeId: 'type_id',
+  locationId: 'location_id',
+  wardId: 'ward_id',
+  addressLine: 'address',
+  shortDescription: 'short_description',
+  description: 'full_description',
+  phone: 'phone',
+  email: 'email',
+  websiteUrl: 'website',
+  starRating: 'star_rating',
+  checkInTime: 'checkin_time',
+  checkOutTime: 'checkout_time',
+  latitude: 'latitude',
+  longitude: 'longitude',
+  status: 'status',
+  images: 'images',
+  amenities: 'amenities',
+  attractions: 'attractions',
+};
+
+// Field nào thuộc tab nào, dùng để mở đúng tab khi backend báo lỗi.
+const FIELD_TAB_MAP = {
+  name: 'general',
+  code: 'general',
+  type_id: 'general',
+  star_rating: 'general',
+  status: 'general',
+  checkin_time: 'general',
+  checkout_time: 'general',
+  short_description: 'general',
+  full_description: 'general',
+  phone: 'general',
+  email: 'general',
+  website: 'general',
+  location_id: 'location',
+  ward_id: 'location',
+  address: 'location',
+  latitude: 'location',
+  longitude: 'location',
+  attractions: 'location',
+  amenities: 'amenities',
+  images: 'media',
+};
+
+// Đổi { shortDescription: "..." } -> { short_description: "..." }
+function normalizeApiErrors(apiErrors = {}) {
+  return Object.entries(apiErrors).reduce((result, [apiKey, message]) => {
+    result[API_ERROR_KEY_MAP[apiKey] || apiKey] = message;
+    return result;
+  }, {});
+}
+
+// Chọn tab chứa lỗi đầu tiên theo thứ tự tab trên UI.
+function resolveFirstErrorTab(formErrors = {}) {
+  const tabOrder = ['general', 'location', 'amenities', 'media'];
+  const tabs = Object.keys(formErrors)
+    .map((field) => FIELD_TAB_MAP[field])
+    .filter(Boolean);
+
+  if (tabs.length === 0) return 'general';
+  return tabs.sort((a, b) => tabOrder.indexOf(a) - tabOrder.indexOf(b))[0];
+}
+
+// DB quy ước lưu đường dẫn tương đối (/uploads/...).
+// State form giữ URL tuyệt đối để hiển thị, nên phải bỏ origin trước khi gửi API.
+function toRelativeImageUrl(url) {
+  if (!url) return url;
+  const match = String(url).match(/^https?:\/\/[^/]+(\/uploads\/.+)$/);
+  return match ? match[1] : url;
+}
+
+function toRelativeImageUrls(formData) {
+  return [
+    formData.cover_image,
+    ...(formData.gallery_images || []),
+  ]
+    .filter((url, index, all) => url && all.indexOf(url) === index)
+    .map(toRelativeImageUrl);
+}
+
 function toApiGeneralPayload(formData) {
   return {
+    // Mã cơ sở lưu trú phải được gửi khi Sửa, nếu không backend giữ nguyên mã cũ.
+    code: String(formData.code || '').trim(),
     name: formData.name,
     typeId: Number(formData.type_id),
     status: getStatusValue(formData.status),
@@ -70,10 +156,8 @@ function toApiGeneralPayload(formData) {
 }
 
 function toApiCreatePayload(formData) {
-  const imageUrls = [
-    formData.cover_image,
-    ...(formData.gallery_images || []),
-  ].filter((url, index, all) => url && all.indexOf(url) === index);
+  const imageUrls = toRelativeImageUrls(formData);
+  const coverImageUrl = toRelativeImageUrl(formData.cover_image);
 
   return {
     // Backend dùng camelCase và cần mã cơ sở lưu trú khi tạo mới.
@@ -83,7 +167,8 @@ function toApiCreatePayload(formData) {
     // type_id của UI phải đổi thành typeId dạng số cho API.
     typeId: Number(formData.type_id),
 
-    status: getStatusValue(formData.status),
+    // Trang Create luôn tạo bản nháp; đổi trạng thái do trang Sửa đảm nhận.
+    status: 0,
     locationId: Number(formData.location_id),
     wardId: formData.ward_id ? Number(formData.ward_id) : null,
 
@@ -107,11 +192,14 @@ function toApiCreatePayload(formData) {
     // Ảnh bìa phải được đánh dấu rõ để backend cho phép trạng thái ACTIVE.
     images: imageUrls.map((imageUrl) => ({
       imageUrl,
-      isCover: imageUrl === formData.cover_image,
+      isCover: imageUrl === coverImageUrl,
     })),
 
-    // Backend nhận danh sách ID tiện nghi.
-    amenityIds: (formData.amenity_ids || []).map(Number),
+    // Backend đọc key "amenities" dạng [{ amenityId }] (spec 5.2).
+    // Nếu gửi "amenityIds" thì service bỏ qua im lặng → tiện nghi không được ghi.
+    amenities: (formData.amenity_ids || []).map((amenityId) => ({
+      amenityId: Number(amenityId),
+    })),
 
     // Backend nhận distanceMeters, không nhận distance + distance_unit
     // theo format cũ của UI.
@@ -124,17 +212,18 @@ function toApiCreatePayload(formData) {
 }
 
 function toApiRelatedPayload(formData) {
-  const imageUrls = [
-    formData.cover_image,
-    ...(formData.gallery_images || []),
-  ].filter((url, index, all) => url && all.indexOf(url) === index);
+  const imageUrls = toRelativeImageUrls(formData);
+  const coverImageUrl = toRelativeImageUrl(formData.cover_image);
 
   return {
     images: imageUrls.map((imageUrl) => ({
       imageUrl,
-      isCover: imageUrl === formData.cover_image,
+      isCover: imageUrl === coverImageUrl,
     })),
-    amenityIds: (formData.amenity_ids || []).map(Number),
+    // Cùng shape với create để backend replaceAmenities xử lý được.
+    amenities: (formData.amenity_ids || []).map((amenityId) => ({
+      amenityId: Number(amenityId),
+    })),
     attractions: (formData.attractions || []).map((item) => ({
       attractionId: Number(item.attraction_id),
       distanceMeters: Number(item.distance_meters) || 0,
@@ -147,7 +236,6 @@ export default function AccommodationFormPage() {
   const { id } = useParams();
   const isEdit = Boolean(id);
   const navigate = useNavigate();
-  const { addAccommodation, updateAccommodation } = useAdmin();
 
   // Active form section tab (4 tabs total, NO separate attraction tab)
   const [activeTab, setActiveTab] = useState('general');
@@ -174,13 +262,17 @@ export default function AccommodationFormPage() {
     star_rating: 4,
     status: 'Draft',
     featured: false,
-    cover_image: resortDanangImg,
-    gallery_images: [resortDanangImg],
+    cover_image: '',
+    gallery_images: [],
     amenity_ids: [],
     attractions: []
   });
 
   const [errors, setErrors] = useState({});
+
+  // Đếm số lượt upload đang chạy. Khi > 0, preview ảnh vẫn là blob: tạm
+  // nên phải chặn submit để URL blob không bị ghi xuống DB.
+  const [uploadingCount, setUploadingCount] = useState(0);
 
   // Dữ liệu danh mục lấy từ backend (thay cho mock trước đây).
   const [lookupLocations, setLookupLocations] = useState([]);
@@ -190,8 +282,15 @@ export default function AccommodationFormPage() {
   const [lookupError, setLookupError] = useState(null);
   const [isLoadingLookups, setIsLoadingLookups] = useState(false);
   const uploadImages = async (files, field, multiple = false) => {
-    // Hiển thị preview ngay, không bắt người dùng chờ request upload hoàn tất.
+    console.group("[AccommodationFormPage.uploadImages]");
+    console.log("[1] bắt đầu upload", files.length, "ảnh cho trường", field);
+
+    // Giữ giá trị cũ để khôi phục nếu upload lỗi (vd ảnh bìa đang có trên server).
+    const previousValue = formData[field];
     const previews = files.map((file) => URL.createObjectURL(file));
+    setUploadingCount((count) => count + 1);
+
+    // Hiển thị preview ngay, không bắt người dùng chờ request upload hoàn tất.
     setFormData((prev) => ({
       ...prev,
       [field]: multiple ? [...(prev[field] || []), ...previews] : previews[0] || '',
@@ -204,8 +303,22 @@ export default function AccommodationFormPage() {
         [field]: multiple ? [...(prev[field] || []).filter((url) => !previews.includes(url)), ...urls] : urls[0] || '',
       }));
       previews.forEach((url) => URL.revokeObjectURL(url));
+      console.log("[2] upload xong, nhận URL backend:", urls);
     } catch (error) {
+      // Upload lỗi thì gỡ blob khỏi form, tránh submit nhầm URL blob:.
+      setFormData((prev) => ({
+        ...prev,
+        [field]: multiple
+          ? (prev[field] || []).filter((url) => !previews.includes(url))
+          : previousValue || '',
+      }));
+      previews.forEach((url) => URL.revokeObjectURL(url));
+      console.error("[3] upload thất bại:", error);
       setErrors((prev) => ({ ...prev, images: error.message || 'Không thể tải ảnh lên.' }));
+    } finally {
+      // Luôn giảm bộ đếm kể cả thành công hay lỗi để không kẹt trạng thái chặn submit.
+      setUploadingCount((count) => count - 1);
+      console.groupEnd();
     }
   };
 
@@ -532,6 +645,13 @@ export default function AccommodationFormPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
+    // Ảnh còn upload thì preview là blob:, chưa có URL backend để lưu.
+    if (uploadingCount > 0) {
+      setErrors((prev) => ({ ...prev, images: 'Ảnh đang tải lên, vui lòng đợi hoàn tất.' }));
+      setActiveTab('media');
+      return;
+    }
+
     const clientErrors = {};
     if (!String(formData.address || '').trim()) {
       clientErrors.address = 'Vui lòng nhập địa chỉ.';
@@ -544,6 +664,8 @@ export default function AccommodationFormPage() {
     }
     if (Object.keys(clientErrors).length > 0) {
       setErrors((prev) => ({ ...prev, ...clientErrors }));
+      // Lỗi địa chỉ/phường nằm ở tab location, mô tả nằm ở general.
+      setActiveTab(resolveFirstErrorTab(clientErrors));
       return;
     }
 
@@ -566,23 +688,40 @@ export default function AccommodationFormPage() {
         }))
       };
 
+    console.group("[AccommodationFormPage.handleSubmit]");
+    console.log("[1] gửi", isEdit ? "PUT" : "POST", "| trạng thái:", getStatusValue(formData.status));
+
     try {
       if (isEdit) {
         await accommodationsApi.update(id, payload);
+        console.log("[2] PUT thành công, id =", id);
         navigate(`/admin/accommodations/${id}`);
       } else {
         const createPayload = toApiCreatePayload(formData);
         const created = await accommodationsApi.create(createPayload);
+        console.log("[2] POST thành công, id =", created.id);
         navigate(`/admin/accommodations/${created.id}`);
       }
     } catch (error) {
-      console.error('[ERROR] Lưu form thất bại:', {
+      console.error("[3] lưu form thất bại:", {
         message: error.message,
         status: error.status,
         errorCode: error.errorCode,
         errors: error.errors,
       });
-      setErrors(error.errors || { form: error.message });
+
+      if (error.errors && Object.keys(error.errors).length > 0) {
+        // Đổi key API -> key input rồi mở tab chứa lỗi đầu tiên.
+        const fieldErrors = normalizeApiErrors(error.errors);
+        setErrors(fieldErrors);
+        setActiveTab(resolveFirstErrorTab(fieldErrors));
+      } else {
+        // 401/500/INVALID_STATE... không gắn field → hiện banner chung.
+        setErrors({ form: error.message });
+        setActiveTab('general');
+      }
+    } finally {
+      console.groupEnd();
     }
   };
 
@@ -600,8 +739,16 @@ export default function AccommodationFormPage() {
             <Link to="/admin/accommodations" className="btn btn-secondary">
               <ArrowLeft size={14} /> Quay lại danh sách
             </Link>
-            <button type="button" onClick={handleSubmit} className="btn btn-primary">
-              <Save size={14} /> {isEdit ? 'Lưu thay đổi' : 'Tạo cơ sở lưu trú'}
+            <button
+              type="button"
+              onClick={handleSubmit}
+              className="btn btn-primary"
+              disabled={uploadingCount > 0}
+            >
+              <Save size={14} />{' '}
+              {uploadingCount > 0
+                ? 'Đang tải ảnh...'
+                : isEdit ? 'Lưu thay đổi' : 'Tạo cơ sở lưu trú'}
             </button>
           </div>
         }
@@ -640,6 +787,13 @@ export default function AccommodationFormPage() {
       </div>
 
       <form onSubmit={handleSubmit}>
+        {errors.form && (
+          <div className="admin-card" style={{ borderColor: '#E53E3E', marginBottom: '12px' }}>
+            <div className="admin-card-body" style={{ color: '#C53030', fontSize: '13px' }}>
+              {errors.form}
+            </div>
+          </div>
+        )}
         {/* Tab 1: General Information & Contact */}
         {activeTab === 'general' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -671,18 +825,20 @@ export default function AccommodationFormPage() {
                     helperText="Mã nhận diện nội bộ cho quy trình kế toán và vận hành."
                   />
 
-                  {isEdit && <FormSelect
+                  <FormSelect
                     label="Loại hình lưu trú"
                     name="type_id"
                     value={formData.type_id}
                     onChange={handleChange}
+                    placeholder="Chọn loại hình lưu trú"
                     options={[
                       { value: 1, label: 'Khách sạn (Hotel)' },
                       { value: 2, label: 'Khu nghỉ dưỡng (Resort)' },
                       { value: 3, label: 'Homestay' }
                     ]}
+                    error={errors.type_id}
                     required
-                  />}
+                  />
 
                   <FormSelect
                     label="Hạng sao"
@@ -696,19 +852,23 @@ export default function AccommodationFormPage() {
                       { value: 4, label: '4 Sao' },
                       { value: 5, label: '5 Sao (Cao cấp)' }
                     ]}
+                    error={errors.star_rating}
                   />
 
-                  <FormSelect
-                    label="Trạng thái hoạt động"
-                    name="status"
-                    value={formData.status}
-                    onChange={handleChange}
-                    options={[
-                      { value: 0, label: 'Bản nháp' },
-                      { value: 1, label: 'Đang hoạt động (Mở nhận đặt phòng)' },
-                      { value: 2, label: 'Ngừng hoạt động (Tạm đóng bảo trì)' }
-                    ]}
-                  />
+                  {isEdit && (
+                    <FormSelect
+                      label="Trạng thái hoạt động"
+                      name="status"
+                      value={formData.status}
+                      onChange={handleChange}
+                      options={[
+                        { value: 0, label: 'Bản nháp' },
+                        { value: 1, label: 'Đang hoạt động (Mở nhận đặt phòng)' },
+                        { value: 2, label: 'Ngừng hoạt động (Tạm đóng bảo trì)' }
+                      ]}
+                      error={errors.status}
+                    />
+                  )}
 
                   <div className="form-group" style={{ justifyContent: 'center' }}>
                     <label className="form-checkbox-label" style={{ marginTop: '16px' }}>
@@ -728,6 +888,7 @@ export default function AccommodationFormPage() {
                     type="time"
                     value={formData.checkin_time}
                     onChange={handleChange}
+                    error={errors.checkin_time}
                   />
 
                   <FormInput
@@ -736,6 +897,7 @@ export default function AccommodationFormPage() {
                     type="time"
                     value={formData.checkout_time}
                     onChange={handleChange}
+                    error={errors.checkout_time}
                   />
 
                   <div className="col-span-full">
@@ -758,6 +920,7 @@ export default function AccommodationFormPage() {
                       value={formData.full_description}
                       onChange={handleChange}
                       rows={5}
+                      error={errors.full_description}
                       placeholder="Mô tả toàn diện về khuôn viên, phong cách thiết kế, trải nghiệm nghỉ dưỡng..."
                     />
                   </div>
@@ -777,6 +940,7 @@ export default function AccommodationFormPage() {
                     name="phone"
                     value={formData.phone}
                     onChange={handleChange}
+                    error={errors.phone}
                     placeholder="+84 236 388 9999"
                   />
 
@@ -786,6 +950,7 @@ export default function AccommodationFormPage() {
                     type="email"
                     value={formData.email}
                     onChange={handleChange}
+                    error={errors.email}
                     placeholder="danang.resort@vietpeacestay.vn"
                   />
 
@@ -795,6 +960,7 @@ export default function AccommodationFormPage() {
                     type="url"
                     value={formData.website}
                     onChange={handleChange}
+                    error={errors.website}
                     placeholder="https://vietpeacestay.vn/resorts/danang"
                   />
                 </div>
@@ -970,6 +1136,7 @@ export default function AccommodationFormPage() {
                     name="latitude"
                     value={formData.latitude}
                     onChange={handleChange}
+                    error={errors.latitude}
                     placeholder="VD: 16.0748"
                     helperText="Tọa độ GPS độc lập của cơ sở lưu trú."
                   />
@@ -979,6 +1146,7 @@ export default function AccommodationFormPage() {
                     name="longitude"
                     value={formData.longitude}
                     onChange={handleChange}
+                    error={errors.longitude}
                     placeholder="VD: 108.2467"
                     helperText="Tọa độ GPS độc lập của cơ sở lưu trú."
                   />
@@ -1010,6 +1178,9 @@ export default function AccommodationFormPage() {
               </div>
 
               <div className="admin-card-body">
+                {errors.attractions && (
+                  <span className="form-error-text">{errors.attractions}</span>
+                )}
                 {!formData.location_id ? (
                   <div
                     style={{
@@ -1267,6 +1438,9 @@ export default function AccommodationFormPage() {
               </span>
             </div>
             <div className="admin-card-body">
+              {errors.amenities && (
+                <span className="form-error-text">{errors.amenities}</span>
+              )}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                 {Object.entries(amenitiesByCategory).map(([category, items]) => (
                   <div key={category} style={{ borderBottom: '1px solid #F3F4F6', paddingBottom: '14px' }}>
@@ -1311,6 +1485,9 @@ export default function AccommodationFormPage() {
               <div className="admin-card-title">Hình ảnh & Bộ sưu tập ảnh</div>
             </div>
             <div className="admin-card-body">
+              {errors.images && (
+                <span className="form-error-text">{errors.images}</span>
+              )}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                 <ImageUpload
                   label="Ảnh bìa chính (Hero Banner)"
@@ -1339,8 +1516,11 @@ export default function AccommodationFormPage() {
           <Link to="/admin/accommodations" className="btn btn-secondary">
             Hủy
           </Link>
-          <button type="submit" className="btn btn-primary">
-            <Save size={14} /> {isEdit ? 'Lưu thay đổi' : 'Tạo cơ sở lưu trú'}
+          <button type="submit" className="btn btn-primary" disabled={uploadingCount > 0}>
+            <Save size={14} />{' '}
+            {uploadingCount > 0
+              ? 'Đang tải ảnh...'
+              : isEdit ? 'Lưu thay đổi' : 'Tạo cơ sở lưu trú'}
           </button>
         </div>
       </form>

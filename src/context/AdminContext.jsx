@@ -10,10 +10,7 @@ import { accommodationsApi } from '../api/accommodations.js';
 
 import { useAuth } from './AuthContext.jsx';
 import {
-  INITIAL_USER,
   INITIAL_LOCATIONS,
-  INITIAL_ACCOMMODATIONS,
-  INITIAL_ROOM_TYPES,
   INITIAL_AMENITIES,
   INITIAL_BOOKINGS,
   INITIAL_ROOM_WEEKDAY_RATES,
@@ -40,9 +37,11 @@ export function AdminProvider({ children }) {
   const currentUser = currentLoggedInUser;
   const isAuthenticated = Boolean(currentLoggedInUser);
 
-  // Entities
+  // Entity
   const [locations, setLocations] = useState(INITIAL_LOCATIONS);
-  const [accommodations, setAccommodations] = useState(INITIAL_ACCOMMODATIONS);
+  // Accommodations chỉ lấy từ API; không khởi tạo bằng mock để trang nào
+  // chưa fetch sẽ hiện rỗng thay vì dữ liệu giả.
+  const [accommodations, setAccommodations] = useState([]);
 
   // Dữ liệu list hiện tại do backend trả về.
   const [accommodationsLoading, setAccommodationsLoading] = useState(false);
@@ -56,7 +55,9 @@ export function AdminProvider({ children }) {
   });
 
   const [attractions, setAttractions] = useState(INITIAL_ATTRACTIONS);
-  const [roomTypes, setRoomTypes] = useState(INITIAL_ROOM_TYPES);
+  // Loại phòng hiện chưa có API list riêng nên state này sẽ rỗng cho tới khi
+  // module room type được nối backend (xem báo cáo các trang bị ảnh hưởng).
+  const [roomTypes, setRoomTypes] = useState([]);
   const [roomWeekdayRates, setRoomWeekdayRates] = useState(INITIAL_ROOM_WEEKDAY_RATES);
   const [amenities, setAmenities] = useState(INITIAL_AMENITIES);
   const [bookings, setBookings] = useState(INITIAL_BOOKINGS);
