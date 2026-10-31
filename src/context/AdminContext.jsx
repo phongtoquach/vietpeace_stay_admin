@@ -1,11 +1,11 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useAuth } from './AuthContext';
+import { apiFetch } from '../api/client.js';
 import {
   INITIAL_USER,
   INITIAL_LOCATIONS,
   INITIAL_ACCOMMODATIONS,
   INITIAL_ROOM_TYPES,
-  INITIAL_AMENITIES,
   INITIAL_BOOKINGS,
   INITIAL_ROOM_WEEKDAY_RATES,
   INITIAL_RATE_PERIODS,
@@ -33,7 +33,8 @@ export function AdminProvider({ children }) {
   const [attractions, setAttractions] = useState(INITIAL_ATTRACTIONS);
   const [roomTypes, setRoomTypes] = useState(INITIAL_ROOM_TYPES);
   const [roomWeekdayRates, setRoomWeekdayRates] = useState(INITIAL_ROOM_WEEKDAY_RATES);
-  const [amenities, setAmenities] = useState(INITIAL_AMENITIES);
+  const [amenities, setAmenities] = useState([]);
+  const [amenityCategories, setAmenityCategories] = useState([]);
   const [bookings, setBookings] = useState(INITIAL_BOOKINGS);
   const [ratePeriods, setRatePeriods] = useState(INITIAL_RATE_PERIODS);
   const [roomRates, setRoomRates] = useState(INITIAL_ROOM_RATES);
@@ -111,6 +112,55 @@ export function AdminProvider({ children }) {
   const removeToast = (id) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
+
+  // Load amenities and categories from SQL Server
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadAmenities() {
+      try {
+        const [amenitiesResponse, categoriesResponse] = await Promise.all([
+          apiFetch('/amenities'),
+          apiFetch('/amenities/categories')
+        ]);
+
+        if (!isMounted) return;
+
+        const amenitiesList =
+          amenitiesResponse?.data?.amenitiesList || [];
+
+        const categoriesList =
+          categoriesResponse?.data?.categoriesList || [];
+
+        setAmenities(
+          amenitiesList.map((item) => ({
+            ...item,
+            category: item.category_code,
+            icon: item.icon_key || 'Sparkles',
+            status: item.is_active ? 'Active' : 'Inactive',
+            usage_count: Number(item.usage_count) || 0
+          }))
+        );
+
+        setAmenityCategories(categoriesList);
+      } catch (error) {
+        console.error('Load amenities error:', error);
+
+        if (isMounted) {
+          showToast(
+            'Không thể tải dữ liệu tiện nghi từ máy chủ.',
+            'error'
+          );
+        }
+      }
+    }
+
+    loadAmenities();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Auth functions
   const login = (email, password) => {
@@ -286,22 +336,129 @@ export function AdminProvider({ children }) {
   };
 
   // Amenities CRUD
-  const addAmenity = (data) => {
-    const newId = Math.max(...amenities.map((a) => a.id), 0) + 1;
-    const newAmenity = { ...data, id: newId };
-    setAmenities((prev) => [...prev, newAmenity]);
-    showToast(`Amenity "${newAmenity.name}" added.`);
-    return newAmenity;
+  const addAmenity = async (data) => {
+    try {
+      const response = await apiFetch('/amenities', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: data.name,
+          category_code: data.category_code || data.category,
+          icon_key: data.icon_key || data.icon || null,
+          description: data.description || '',
+          amenity_scope: data.amenity_scope || 'both'
+        })
+      });
+
+      if (!response?.success) {
+        throw new Error(response?.message || 'Thêm tiện nghi thất bại.');
+      }
+
+      const listResponse = await apiFetch('/amenities');
+      const amenitiesList = listResponse?.data?.amenitiesList || [];
+
+      setAmenities(
+        amenitiesList.map((item) => ({
+          ...item,
+          category: item.category_code,
+          icon: item.icon_key || 'Sparkles',
+          status: item.is_active ? 'Active' : 'Inactive',
+          usage_count: Number(item.usage_count) || 0
+        }))
+      );
+
+      showToast('Thêm tiện nghi thành công.', 'success');
+      return true;
+    } catch (error) {
+      console.error('Add amenity error:', error);
+      showToast(error.message || 'Không thể thêm tiện nghi.', 'error');
+      return false;
+    }
   };
 
-  const updateAmenity = (id, data) => {
-    setAmenities((prev) => prev.map((a) => (a.id === Number(id) ? { ...a, ...data } : a)));
-    showToast('Amenity updated.');
+  const updateAmenity = async (id, data) => {
+    try {
+      const payload = await apiFetch(`/amenities/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          name: data.name,
+          category_code: data.category_code || data.category,
+          amenity_scope: data.amenity_scope,
+          icon_key: data.icon_key || data.icon || null,
+          description: data.description || '',
+          is_active:
+            data.is_active !== undefined
+              ? Boolean(data.is_active)
+              : data.status !== undefined
+                ? data.status === 'Active'
+                : undefined
+        })
+      });
+
+      if (!payload?.success) {
+        throw new Error(payload?.message || 'Cập nhật tiện nghi thất bại.');
+      }
+
+      const response = await apiFetch('/amenities');
+      const amenitiesList = response?.data?.amenitiesList || [];
+
+      setAmenities(
+        amenitiesList.map((item) => ({
+          ...item,
+          category: item.category_code,
+          icon: item.icon_key || 'Sparkles',
+          status: item.is_active ? 'Active' : 'Inactive',
+          usage_count: Number(item.usage_count) || 0
+        }))
+      );
+
+      showToast('Cập nhật tiện nghi thành công.', 'success');
+      return true;
+    } catch (error) {
+      console.error('Update amenity error:', error);
+      showToast(error.message || 'Không thể cập nhật tiện nghi.', 'error');
+      return false;
+    }
   };
 
-  const deleteAmenity = (id) => {
-    setAmenities((prev) => prev.filter((a) => a.id !== Number(id)));
-    showToast('Amenity deleted.', 'info');
+  const toggleAmenityStatus = async (id, isActive) => {
+    try {
+      const response = await apiFetch(`/amenities/${id}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          is_active: isActive
+        })
+      });
+
+      if (!response?.success) {
+        throw new Error(response?.message || 'Không thể cập nhật trạng thái.');
+      }
+
+      const listResponse = await apiFetch('/amenities');
+      const amenitiesList = listResponse?.data?.amenitiesList || [];
+
+      setAmenities(
+        amenitiesList.map((item) => ({
+          ...item,
+          category: item.category_code,
+          icon: item.icon_key || 'Sparkles',
+          status: item.is_active ? 'Active' : 'Inactive',
+          usage_count: Number(item.usage_count) || 0
+        }))
+      );
+
+      showToast(
+        isActive
+          ? 'Đã bật tiện nghi thành công.'
+          : 'Đã tắt tiện nghi thành công.',
+        'success'
+      );
+
+      return true;
+    } catch (error) {
+      console.error('toggleAmenityStatus error:', error);
+      showToast(error.message || 'Không thể cập nhật trạng thái tiện nghi.', 'error');
+      return false;
+    }
   };
 
   // Attraction CRUD
@@ -774,9 +931,10 @@ export function AdminProvider({ children }) {
         updateRoomType,
         deleteRoomType,
         amenities,
+        amenityCategories,
         addAmenity,
         updateAmenity,
-        deleteAmenity,
+        toggleAmenityStatus,
         attractions,
         addAttraction,
         updateAttraction,

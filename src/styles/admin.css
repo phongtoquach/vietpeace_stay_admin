@@ -648,3 +648,64 @@
     padding: 12px 14px;
   }
 }
+
+/* Công tắc ON/OFF tiện nghi */
+.amenity-toggle {
+    position: relative;
+    width: 76px;
+    height: 36px;
+    padding: 3px;
+    border: none;
+    border-radius: 30px;
+    background: #CFD8DC;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    transition: background 0.25s ease;
+}
+
+/* Chữ ON/OFF */
+.amenity-toggle .toggle-label {
+    position: absolute;
+    font-size: 12px;
+    font-weight: 800;
+    color: #455A64;
+}
+
+/* Hình tròn */
+.amenity-toggle .toggle-circle {
+    position: absolute;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    transition: all 0.25s ease;
+}
+
+/* Trạng thái ON */
+.amenity-toggle.is-on .toggle-label {
+    left: 13px;
+}
+
+.amenity-toggle.is-on .toggle-circle {
+    right: 3px;
+    background: #4CAF50;
+}
+
+/* Trạng thái OFF */
+.amenity-toggle.is-off .toggle-label {
+    right: 12px;
+}
+
+.amenity-toggle.is-off .toggle-circle {
+    left: 3px;
+    background: #F44336;
+}
+
+.amenity-toggle:hover {
+    filter: brightness(0.96);
+}
+
+.amenity-toggle:focus-visible {
+    outline: 2px solid #2563EB;
+    outline-offset: 2px;
+}

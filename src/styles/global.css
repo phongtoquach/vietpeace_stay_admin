@@ -453,7 +453,7 @@ input, select, textarea {
 
 .filter-group-wide {
   min-width: 220px;
-  flex: 1;
+  flex: 1 1 300px;
 }
 
 .filter-label {
@@ -605,4 +605,19 @@ input, select, textarea {
 .empty-state-desc {
   font-size: 13px;
   margin-bottom: 14px;
+}
+
+/* Bộ lọc riêng trang quản lý tiện nghi */
+.amenities-filter-panel .filter-group {
+  flex: 0 0 190px;
+  min-width: 150px;
+}
+
+.amenities-filter-panel .filter-group-wide {
+  flex: 1 1 300px;
+  min-width: 220px;
+}
+
+.amenities-filter-panel .filter-actions {
+  flex-shrink: 0;
 }

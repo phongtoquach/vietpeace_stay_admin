@@ -9,20 +9,24 @@ import FormTextarea from '../../components/forms/FormTextarea.jsx';
 import { Plus, Edit2, Trash2, Sparkles, X, Save, Search, RotateCcw } from 'lucide-react';
 
 export default function AmenitiesPage() {
-  const { amenities, accommodations, addAmenity, updateAmenity, deleteAmenity } = useAdmin();
+  const { amenities, amenityCategories, addAmenity, updateAmenity, toggleAmenityStatus } = useAdmin();
 
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
+  const [scopeFilter, setScopeFilter] = useState('');
 
   // Modal
   const [modalOpen, setModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
-  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [nameError, setNameError] = useState('');
+  const [categoryError, setCategoryError] = useState('');
+  const [scopeError, setScopeError] = useState('');
 
   const [formData, setFormData] = useState({
     name: '',
-    category: 'Room Amenities',
+    category: '',
+    amenity_scope: '',
     icon: 'Sparkles',
     description: '',
     status: 'Active'
@@ -30,21 +34,32 @@ export default function AmenitiesPage() {
 
   const handleOpenCreate = () => {
     setEditingItem(null);
+    setNameError('');
+    setCategoryError('');
+    setScopeError('');
+
     setFormData({
-      name: '',
-      category: 'Room Amenities',
-      icon: 'Sparkles',
-      description: '',
-      status: 'Active'
+        name: '',
+        category: '',
+        amenity_scope: '',
+        icon: 'Sparkles',
+        description: '',
+        status: 'Active'
     });
+
     setModalOpen(true);
-  };
+};
 
   const handleOpenEdit = (item) => {
     setEditingItem(item);
+    setNameError('');
+    setCategoryError('');
+    setScopeError('');
+
     setFormData({
       name: item.name,
-      category: item.category,
+      category: item.category_code || item.category || '',
+      amenity_scope: item.amenity_scope || '',
       icon: item.icon || 'Sparkles',
       description: item.description || '',
       status: item.status || 'Active'
@@ -52,54 +67,81 @@ export default function AmenitiesPage() {
     setModalOpen(true);
   };
 
-  const handleSave = (e) => {
+const handleSave = async (e) => {
     e.preventDefault();
-    if (!formData.name.trim()) return;
 
-    if (editingItem) {
-      updateAmenity(editingItem.id, formData);
+    let hasError = false;
+
+    // Kiểm tra tên tiện nghi
+    if (!formData.name.trim()) {
+        setNameError('Yêu cầu nhập tiện nghi');
+        hasError = true;
     } else {
-      addAmenity(formData);
+        setNameError('');
     }
-    setModalOpen(false);
-  };
 
-  const confirmDelete = () => {
-    if (deleteTarget) {
-      deleteAmenity(deleteTarget.id);
-      setDeleteTarget(null);
+    // Kiểm tra nhóm tiện nghi
+    if (!formData.category) {
+        setCategoryError('Yêu cầu chọn nhóm tiện nghi');
+        hasError = true;
+    } else {
+        setCategoryError('');
     }
-  };
+
+    // Kiểm tra phạm vi áp dụng
+    if (!formData.amenity_scope) {
+        setScopeError('Yêu cầu chọn phạm vi áp dụng');
+        hasError = true;
+    } else {
+        setScopeError('');
+    }
+
+    // Nếu có lỗi thì không lưu
+    if (hasError) return;
+
+    // Giữ nguyên xử lý thêm và chỉnh sửa
+    if (editingItem) {
+        const success = await updateAmenity(editingItem.id, formData);
+        if (success) setModalOpen(false);
+    } else {
+        const success = await addAmenity(formData);
+        if (success) setModalOpen(false);
+    }
+};
+
+const handleToggleStatus = async (item) => {
+    const nextStatus = !item.is_active;
+
+    await toggleAmenityStatus(item.id, nextStatus);
+};
+
 
   const filteredAmenities = useMemo(() => {
     return amenities.filter((item) => {
-      const matchSearch =
-        !searchTerm ||
-        item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.description.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchCat = !categoryFilter || item.category === categoryFilter;
-      return matchSearch && matchCat;
-    });
-  }, [amenities, searchTerm, categoryFilter]);
+        const keyword = searchTerm.trim().toLowerCase();
 
-  // Count usage in accommodations
-  const usageCountMap = useMemo(() => {
-    const map = {};
-    accommodations.forEach((acc) => {
-      (acc.amenity_ids || []).forEach((amId) => {
-        map[amId] = (map[amId] || 0) + 1;
-      });
-    });
-    return map;
-  }, [accommodations]);
+        const name = (item.name || '').toLowerCase();
+        const description = (item.description || '').toLowerCase();
 
-  const categoryMap = {
-    'Room Amenities': 'Tiện nghi trong phòng',
-    'Property Facilities': 'Cơ sở vật chất chung',
-    'Dining': 'Ẩm thực & Nhà hàng',
-    'Recreation': 'Giải trí & Thể thao',
-    'Services': 'Dịch vụ lưu trú'
-  };
+        // Lọc theo tên và mô tả
+        const matchSearch =
+            !keyword ||
+            name.includes(keyword) ||
+            description.includes(keyword);
+
+        // Lọc theo nhóm tiện nghi
+        const matchCat =
+            !categoryFilter || item.category === categoryFilter;
+
+        // Lọc theo phạm vi áp dụng
+        const matchScope =
+            !scopeFilter ||
+            item.amenity_scope === scopeFilter ||
+            item.amenity_scope === 'both';
+
+        return matchSearch && matchCat && matchScope;
+    });
+}, [amenities, searchTerm, categoryFilter, scopeFilter]);
 
   return (
     <div>
@@ -114,7 +156,7 @@ export default function AmenitiesPage() {
       />
 
       {/* Filter Toolbar */}
-      <div className="filter-panel">
+      <div className="filter-panel amenities-filter-panel">
         <div className="filter-group filter-group-wide">
           <label className="filter-label">Tìm kiếm tiện nghi</label>
           <div style={{ position: 'relative' }}>
@@ -138,12 +180,26 @@ export default function AmenitiesPage() {
             onChange={(e) => setCategoryFilter(e.target.value)}
           >
             <option value="">Tất cả các nhóm</option>
-            <option value="Room Amenities">Tiện nghi trong phòng</option>
-            <option value="Property Facilities">Cơ sở vật chất chung</option>
-            <option value="Dining">Ẩm thực & Nhà hàng</option>
-            <option value="Recreation">Giải trí & Thể thao</option>
-            <option value="Services">Dịch vụ lưu trú</option>
+            {amenityCategories.map((category) => (
+            <option key={category.code} value={category.code}>
+            {category.name}
+            </option>
+        ))}
           </select>
+        </div>
+
+        <div className="filter-group">
+            <label className="filter-label">Phạm vi áp dụng</label>
+
+            <select
+                className="filter-select"
+                value={scopeFilter}
+                onChange={(e) => setScopeFilter(e.target.value)}
+            >
+                <option value="">Tất cả phạm vi</option>
+                <option value="accommodation">Cơ sở lưu trú</option>
+                <option value="room">Phòng</option>
+            </select>
         </div>
 
         <div className="filter-actions">
@@ -153,6 +209,7 @@ export default function AmenitiesPage() {
             onClick={() => {
               setSearchTerm('');
               setCategoryFilter('');
+              setScopeFilter('');
             }}
           >
             <RotateCcw size={13} /> Đặt lại
@@ -162,18 +219,36 @@ export default function AmenitiesPage() {
 
       {/* Table */}
       <div className="table-responsive">
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th style={{ width: '60px' }}>ID</th>
-              <th>Tên tiện nghi</th>
-              <th>Nhóm tiện nghi</th>
-              <th>Mô tả chi tiết</th>
-              <th style={{ textAlign: 'center', width: '150px' }}>Số cơ sở đang dùng</th>
-              <th style={{ width: '120px' }}>Trạng thái</th>
-              <th style={{ textAlign: 'center', width: '90px' }}>Thao tác</th>
-            </tr>
-          </thead>
+        <table
+            className="data-table"
+            style={{
+                width: '100%',
+                tableLayout: 'fixed'
+            }}
+        >
+            <colgroup>
+                <col style={{ width: '5%' }} />
+                <col style={{ width: '18%' }} />
+                <col style={{ width: '17%' }} />
+                <col style={{ width: '14%' }} />
+                <col style={{ width: '20%' }} />
+                <col style={{ width: '14%' }} />
+                <col style={{ width: '12%' }} />
+            </colgroup>
+
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Tên tiện nghi</th>
+                <th>Nhóm tiện nghi</th>
+                <th>Phạm vi áp dụng</th>
+                <th style={{ textAlign: 'center' }}>
+                    Mô tả chi tiết
+                </th>
+                <th>Trạng thái</th>
+                <th style={{ textAlign: 'center' }}>Thao tác</th>
+              </tr>
+            </thead>
           <tbody>
             {filteredAmenities.length === 0 ? (
               <tr>
@@ -182,44 +257,86 @@ export default function AmenitiesPage() {
                 </td>
               </tr>
             ) : (
-              filteredAmenities.map((item) => (
+            filteredAmenities.map((item) => (
                 <tr key={item.id}>
-                  <td className="code-badge">#{item.id}</td>
-                  <td style={{ fontWeight: 600, color: '#292D32' }}>{item.name}</td>
-                  <td>
-                    <span className="badge badge-neutral">{categoryMap[item.category] || item.category}</span>
-                  </td>
-                  <td style={{ color: '#4B5563', fontSize: '12.5px' }}>{item.description}</td>
-                  <td style={{ textAlign: 'center' }}>
-                    <span className="tabular-nums" style={{ fontWeight: 600 }}>
-                      {usageCountMap[item.id] || 0} cơ sở
-                    </span>
-                  </td>
-                  <td>
-                    <StatusBadge status={item.status} />
-                  </td>
-                  <td style={{ textAlign: 'center' }}>
-                    <div style={{ display: 'inline-flex', alignItems: 'center' }}>
-                      <button
-                        type="button"
-                        className="row-action-btn"
-                        title="Chỉnh sửa tiện nghi"
-                        onClick={() => handleOpenEdit(item)}
-                      >
-                        <Edit2 size={13} />
-                      </button>
-                      <button
-                        type="button"
-                        className="row-action-btn delete"
-                        title="Xóa tiện nghi"
-                        onClick={() => setDeleteTarget(item)}
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
-                  </td>
+                    {/* ID */}
+                    <td className="code-badge">
+                        #{item.id}
+                    </td>
+
+                    {/* Tên tiện nghi */}
+                    <td style={{ fontWeight: 600, color: '#292D32' }}>
+                        {item.name}
+                    </td>
+
+                    {/* Nhóm tiện nghi */}
+                    <td>
+                        <span className="badge badge-neutral">
+                            {amenityCategories.find(
+                                (category) => category.code === item.category
+                            )?.name || item.category}
+                        </span>
+                    </td>
+
+                    {/* Phạm vi áp dụng */}
+                    <td>
+                        <span className="badge badge-neutral">
+                            {{
+                                accommodation: 'Cơ sở lưu trú',
+                                room: 'Phòng',
+                                both: 'Cả 2'
+                            }[item.amenity_scope] || 'Chưa xác định'}
+                        </span>
+                    </td>
+
+                    {/* Mô tả chi tiết */}
+                    <td style={{
+                        color: '#4B5563',
+                        fontSize: '12.5px',
+                        textAlign: 'center'
+                    }}>
+                        {item.description || ''}
+                    </td>
+
+                    {/* Trạng thái */}
+                    <td>
+                        <StatusBadge status={item.status} />
+                    </td>
+
+                    {/* Thao tác */}
+                    <td style={{ textAlign: 'center' }}>
+                        <div style={{ display: 'inline-flex', alignItems: 'center' }}>
+
+                            {/* Nút chỉnh sửa */}
+                            <button
+                                type="button"
+                                className="row-action-btn"
+                                title="Chỉnh sửa tiện nghi"
+                                onClick={() => handleOpenEdit(item)}
+                            >
+                                <Edit2 size={13} />
+                            </button>
+
+                            {/* Nút ON/OFF */}
+                            <button
+                                type="button"
+                                className={`amenity-toggle ${item.is_active ? 'is-on' : 'is-off'}`}
+                                title={item.is_active ? 'Tắt tiện nghi' : 'Bật tiện nghi'}
+                                onClick={() => handleToggleStatus(item)}
+                                aria-label={item.is_active ? 'Tắt tiện nghi' : 'Bật tiện nghi'}
+                                aria-pressed={Boolean(item.is_active)}
+                            >
+                                <span className="toggle-label">
+                                    {item.is_active ? 'ON' : 'OFF'}
+                                </span>
+
+                                <span className="toggle-circle"></span>
+                            </button>
+
+                        </div>
+                    </td>
                 </tr>
-              ))
+            ))
             )}
           </tbody>
         </table>
@@ -241,26 +358,90 @@ export default function AmenitiesPage() {
               <div className="modal-body">
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                   <FormInput
-                    label="Tên tiện nghi"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    placeholder="Ví dụ: Bể bơi vô cực hướng biển, Bữa sáng buffet..."
-                    required
-                  />
+                  label="Tên tiện nghi"
+                  value={formData.name}
+                  onChange={(e) => {
+                  setFormData({ ...formData, name: e.target.value });
+
+                  if (e.target.value.trim()) {
+                  setNameError('');
+                }
+                }}
+                  placeholder="Ví dụ: Bể bơi vô cực hướng biển, Bữa sáng buffet..."
+                />
+
+                {nameError && (
+                    <p style={{
+                        color: '#DC2626',
+                        fontSize: '12px',
+                        marginTop: '-10px',
+                        marginBottom: '0'
+                    }}>
+                        {nameError}
+                    </p>
+                  )}
 
                   <FormSelect
                     label="Nhóm tiện nghi"
                     value={formData.category}
-                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                    onChange={(e) => {
+                        setFormData({
+                            ...formData,
+                            category: e.target.value
+                        });
+
+                        if (e.target.value) {
+                            setCategoryError('');
+                        }
+                    }}
+                    options={amenityCategories.map((category) => ({
+                        value: category.code,
+                        label: category.name
+                    }))}
+                    placeholder="Select option..."
+                />
+
+                {categoryError && (
+                    <p style={{
+                        color: '#DC2626',
+                        fontSize: '12px',
+                        marginTop: '-10px',
+                        marginBottom: '0'
+                    }}>
+                        {categoryError}
+                    </p>
+                )}
+                  
+                  <FormSelect
+                    label="Phạm vi áp dụng"
+                    value={formData.amenity_scope}
+                    onChange={(e) => {
+                        setFormData({
+                            ...formData,
+                            amenity_scope: e.target.value
+                        });
+
+                        if (e.target.value) {
+                            setScopeError('');
+                        }
+                    }}
                     options={[
-                      { value: 'Room Amenities', label: 'Tiện nghi trong phòng' },
-                      { value: 'Property Facilities', label: 'Cơ sở vật chất chung' },
-                      { value: 'Dining', label: 'Ẩm thực & Nhà hàng' },
-                      { value: 'Recreation', label: 'Giải trí & Thể thao' },
-                      { value: 'Services', label: 'Dịch vụ lưu trú' }
+                        { value: 'accommodation', label: 'Cơ sở lưu trú' },
+                        { value: 'room', label: 'Phòng' },
+                        { value: 'both', label: 'Cả 2' }
                     ]}
-                    required
-                  />
+                    placeholder="Select option..."
+                />            
+                {scopeError && (
+                      <p style={{
+                          color: '#DC2626',
+                          fontSize: '12px',
+                          marginTop: '-10px',
+                          marginBottom: '0'
+                      }}>
+                          {scopeError}
+                      </p>
+                  )}
 
                   <FormSelect
                     label="Trạng thái"
@@ -270,6 +451,18 @@ export default function AmenitiesPage() {
                       { value: 'Active', label: 'Đang hoạt động' },
                       { value: 'Inactive', label: 'Ngừng hoạt động' }
                     ]}
+                  />
+
+                  <FormInput
+                      label="Icon Key"
+                      value={formData.icon}
+                      onChange={(e) =>
+                          setFormData({
+                              ...formData,
+                              icon: e.target.value
+                          })
+                      }
+                      placeholder="Ví dụ: Wifi, Sparkles, Car, Waves..."
                   />
 
                   <FormTextarea
@@ -295,16 +488,6 @@ export default function AmenitiesPage() {
         </div>
       )}
 
-      {/* Delete Confirmation */}
-      <ConfirmDialog
-        isOpen={Boolean(deleteTarget)}
-        title="Xác nhận xóa tiện nghi"
-        message={`Bạn có chắc chắn muốn xóa tiện nghi "${deleteTarget?.name}"?`}
-        confirmLabel="Xác nhận xóa"
-        confirmVariant="danger"
-        onConfirm={confirmDelete}
-        onCancel={() => setDeleteTarget(null)}
-      />
     </div>
   );
 }
