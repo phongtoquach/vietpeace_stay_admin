@@ -4,14 +4,18 @@ import PageHeader from '../../components/common/PageHeader.jsx';
 import DataTable from '../../components/common/DataTable.jsx';
 import Pagination from '../../components/common/Pagination.jsx';
 import StatusBadge from '../../components/common/StatusBadge.jsx';
+import ConfirmDialog from '../../components/common/ConfirmDialog.jsx';
 import { formatVND } from '../../data/entities.js';
-import { Plus, Edit2, Search, RotateCcw } from 'lucide-react';
+import { Plus, Edit2, Search, RotateCcw, Trash2 } from 'lucide-react';
 import { roomTypesApi } from '../../api/roomTypes.js';
 import { accommodationsApi } from '../../api/accommodations.js';
+import { useAdmin } from '../../context/AdminContext.jsx';
 
 const SEARCH_DEBOUNCE_MS = 400;
 
 export default function RoomTypeListPage() {
+  const { showToast } = useAdmin();
+
   // Giá trị ô tìm kiếm và giá trị đã debounce (dùng để gọi API).
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -31,6 +35,13 @@ export default function RoomTypeListPage() {
   const [totalItems, setTotalItems] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  // Dòng đang chờ xác nhận xóa + id đang gọi API xóa.
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
+
+  // Tăng biến này để ép effect tải lại danh sách sau khi xóa.
+  const [reloadKey, setReloadKey] = useState(0);
 
   // Options cho dropdown lọc cơ sở lưu trú (lấy từ DB, không dùng mock).
   const [accommodationOptions, setAccommodationOptions] = useState([]);
@@ -134,6 +145,7 @@ export default function RoomTypeListPage() {
     sortDirection,
     currentPage,
     pageSize,
+    reloadKey,
   ]);
 
   const handleResetFilters = () => {
@@ -148,6 +160,34 @@ export default function RoomTypeListPage() {
     setSortField(field);
     setSortDirection(direction);
     setCurrentPage(1);
+  };
+
+  const handleConfirmDelete = async () => {
+    const target = deleteTarget;
+    if (!target || deletingId) return;
+
+    // Đóng dialog ngay để tránh bấm xác nhận 2 lần.
+    setDeleteTarget(null);
+    setDeletingId(target.id);
+
+    try {
+      await roomTypesApi.remove(target.id);
+      showToast(`Đã xóa loại phòng "${target.name}".`);
+
+      // Vừa xóa dòng cuối của trang > 1 → lùi về trang trước.
+      if (rows.length === 1 && currentPage > 1) {
+        setCurrentPage((page) => Math.max(1, page - 1));
+      } else {
+        // Cùng trang nhưng vẫn phải gọi lại API để lấy total mới.
+        setReloadKey((key) => key + 1);
+      }
+    } catch (deleteError) {
+      showToast(deleteError.message || 'Không thể xóa loại phòng.', 'error');
+      // Refetch để đồng bộ nếu bản ghi đã bị người khác xóa (404).
+      setReloadKey((key) => key + 1);
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   const columns = [
@@ -258,16 +298,28 @@ export default function RoomTypeListPage() {
     {
       header: 'Thao tác',
       accessor: 'actions',
-      width: '70px',
+      width: '100px',
       align: 'center',
       render: (row) => (
-        <Link
-          to={`/admin/room-types/${row.id}/edit`}
-          className="row-action-btn"
-          title="Chỉnh sửa loại phòng"
-        >
-          <Edit2 size={13} />
-        </Link>
+        <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
+          <Link
+            to={`/admin/room-types/${row.id}/edit`}
+            className="row-action-btn"
+            title="Chỉnh sửa loại phòng"
+          >
+            <Edit2 size={13} />
+          </Link>
+          <button
+            type="button"
+            className="row-action-btn delete"
+            title="Xóa loại phòng"
+            aria-label={`Xóa ${row.name}`}
+            disabled={deletingId === row.id}
+            onClick={() => setDeleteTarget(row)}
+          >
+            <Trash2 size={13} />
+          </button>
+        </div>
       )
     }
   ];
@@ -385,6 +437,16 @@ export default function RoomTypeListPage() {
           setPageSize(size);
           setCurrentPage(1);
         }}
+      />
+
+      <ConfirmDialog
+        isOpen={Boolean(deleteTarget)}
+        title="Xóa loại phòng"
+        message={`Bạn có chắc chắn muốn xóa loại phòng "${deleteTarget?.name}" không?`}
+        confirmLabel="Xóa loại phòng"
+        cancelLabel="Hủy"
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={handleConfirmDelete}
       />
     </div>
   );

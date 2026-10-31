@@ -2,12 +2,13 @@ import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAdmin } from '../../context/AdminContext.jsx';
 import { lookupsApi } from '../../api/lookups.js';
+import { accommodationsApi } from '../../api/accommodations.js';
 import PageHeader from '../../components/common/PageHeader.jsx';
 import DataTable from '../../components/common/DataTable.jsx';
 import Pagination from '../../components/common/Pagination.jsx';
 import StatusBadge from '../../components/common/StatusBadge.jsx';
 import ConfirmDialog from '../../components/common/ConfirmDialog.jsx';
-import { Plus, Eye, Edit2, Trash2, Search, RotateCcw, Star } from 'lucide-react';
+import { Plus, Edit2, Trash2, Search, RotateCcw, Star } from 'lucide-react';
 
 // Whitelist các cột thực sự bấm sort được trên UI (khớp `accessor` của columns).
 // Dùng để chặn URL rác kiểu ?sortBy=abc — URL do người dùng sửa tay được, không tin.
@@ -28,11 +29,11 @@ const ALLOWED_PAGE_SIZES = [5, 10, 20, 50];
 export default function AccommodationListPage() {
   const {
     accommodations,
-    deleteAccommodation,
     fetchAccommodations,
     accommodationsLoading,
     accommodationsError,
-    accommodationsPagination
+    accommodationsPagination,
+    showToast
   } = useAdmin();
 
 
@@ -93,6 +94,11 @@ export default function AccommodationListPage() {
 
   // Confirm delete dialog
   const [deleteTargetId, setDeleteTargetId] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
+
+  // Tăng để ép effect tải lại danh sách sau khi đổi nổi bật.
+  const [reloadKey, setReloadKey] = useState(0);
+  const [featuredUpdatingId, setFeaturedUpdatingId] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -227,7 +233,8 @@ export default function AccommodationListPage() {
     sortField,
     sortDirection,
     currentPage,
-    pageSize
+    pageSize,
+    reloadKey
   ]);
 
   // Backend đã filter, sort và paginate toàn bộ dữ liệu.
@@ -267,10 +274,49 @@ export default function AccommodationListPage() {
     }
   };
 
-  const confirmDelete = () => {
-    if (deleteTargetId) {
-      deleteAccommodation(deleteTargetId);
-      setDeleteTargetId(null);
+  const confirmDelete = async () => {
+    const targetId = deleteTargetId;
+    if (!targetId || deletingId) return;
+
+    setDeleteTargetId(null);
+    setDeletingId(targetId);
+
+    try {
+      await accommodationsApi.remove(targetId);
+      showToast('Đã xóa cơ sở lưu trú.');
+
+      // Xóa dòng cuối của trang > 1 thì lùi trang, tránh trang trống.
+      if (accommodations.length === 1 && currentPage > 1) {
+        setCurrentPage((page) => Math.max(1, page - 1));
+      } else {
+        setReloadKey((key) => key + 1);
+      }
+    } catch (error) {
+      showToast(
+        error.errorCode === 'INVALID_STATE'
+          ? 'Không thể xóa cơ sở lưu trú vì còn loại phòng đang hoạt động.'
+          : error.message || 'Không thể xóa cơ sở lưu trú.',
+        'error'
+      );
+      setReloadKey((key) => key + 1);
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const handleFeaturedToggle = async (row) => {
+    if (featuredUpdatingId) return;
+
+    const nextFeatured = !row.featured;
+    setFeaturedUpdatingId(row.id);
+    try {
+      await accommodationsApi.updateFeatured(row.id, nextFeatured);
+      showToast(nextFeatured ? 'Đã bật nổi bật.' : 'Đã tắt nổi bật.');
+      setReloadKey((key) => key + 1);
+    } catch (error) {
+      showToast(error.message || 'Không thể cập nhật nổi bật.', 'error');
+    } finally {
+      setFeaturedUpdatingId(null);
     }
   };
 
@@ -397,14 +443,6 @@ export default function AccommodationListPage() {
       render: (row) => (
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
           <Link
-            to={`/admin/accommodations/${row.id}`}
-            className="row-action-btn"
-            title="Xem chi tiết"
-            aria-label={`Xem ${row.name}`}
-          >
-            <Eye size={13} />
-          </Link>
-          <Link
             to={`/admin/accommodations/${row.id}/edit`}
             className="row-action-btn"
             title="Chỉnh sửa cơ sở lưu trú"
@@ -414,8 +452,20 @@ export default function AccommodationListPage() {
           </Link>
           <button
             type="button"
+            className="row-action-btn"
+            title={row.featured ? 'Tắt nổi bật' : 'Bật nổi bật'}
+            aria-label={`${row.featured ? 'Tắt' : 'Bật'} nổi bật ${row.name}`}
+            disabled={featuredUpdatingId === row.id}
+            onClick={() => handleFeaturedToggle(row)}
+            style={{ color: row.featured ? '#F4C542' : '#6B7280' }}
+          >
+            <Star size={13} fill={row.featured ? '#F4C542' : 'none'} />
+          </button>
+          <button
+            type="button"
             className="row-action-btn delete"
             title="Xóa cơ sở lưu trú"
+            disabled={deletingId === row.id}
             onClick={() => setDeleteTargetId(row.id)}
             aria-label={`Xóa ${row.name}`}
           >
@@ -615,7 +665,7 @@ export default function AccommodationListPage() {
       <ConfirmDialog
         isOpen={Boolean(deleteTargetId)}
         title="Xác nhận xóa cơ sở lưu trú"
-        message="Bạn có chắc chắn muốn xóa vĩnh viễn cơ sở lưu trú này? Thao tác này cũng sẽ xóa toàn bộ các loại phòng và cấu hình giá liên quan."
+        message="Bạn có chắc chắn muốn xóa cơ sở lưu trú này không?"
         confirmLabel="Xóa cơ sở lưu trú"
         confirmVariant="danger"
         onConfirm={confirmDelete}

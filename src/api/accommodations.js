@@ -156,6 +156,49 @@ export const accommodationsApi = {
     }
   },
 
+  async updateFeatured(id, isFeatured) {
+    console.group('[accommodationsApi.updateFeatured]');
+    try {
+      console.log('[1] id + isFeatured:', { id, isFeatured });
+      const payload = await apiFetch(`/accommodations/${id}/featured`, {
+        method: 'PATCH',
+        body: JSON.stringify({ isFeatured }),
+      });
+      console.log('[2] phản hồi:', payload.data);
+      return payload.data;
+    } catch (error) {
+      console.error('[3] lỗi đổi nổi bật:', {
+        status: error.status,
+        errorCode: error.errorCode,
+        errors: error.errors,
+      });
+      throw error;
+    } finally {
+      console.groupEnd();
+    }
+  },
+
+  async remove(id) {
+    console.group('[accommodationsApi.remove]');
+    try {
+      console.log('[1] xóa mềm id:', id);
+      const payload = await apiFetch(`/accommodations/${id}`, {
+        method: 'DELETE',
+      });
+      console.log('[2] phản hồi:', payload.data);
+      return payload.data;
+    } catch (error) {
+      console.error('[3] lỗi xóa cơ sở lưu trú:', {
+        status: error.status,
+        errorCode: error.errorCode,
+        errors: error.errors,
+      });
+      throw error;
+    } finally {
+      console.groupEnd();
+    }
+  },
+
   /** Tạo mới một accommodation (POST) — trả về DTO detail vừa tạo. */
   async create(data) {
     try {

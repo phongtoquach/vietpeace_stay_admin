@@ -28,7 +28,7 @@ export default function AccommodationDetailPage() {
     roomRates,
     ratePeriods,
     getRoomWeekdayRates,
-    deleteAccommodation
+    showToast
   } = useAdmin();
 
   const [accommodation, setAccommodation] = useState(null);
@@ -37,6 +37,8 @@ export default function AccommodationDetailPage() {
 
   const [activeTab, setActiveTab] = useState('general');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [featuredUpdating, setFeaturedUpdating] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -123,12 +125,47 @@ export default function AccommodationDetailPage() {
       ? Math.min(Math.round(parsedStarCount), 5)
       : 0;
 
-  const handleDeleteAccommodation = () => {
-    const success = deleteAccommodation(accommodation.id);
-    if (success) {
+  const handleDeleteAccommodation = async () => {
+    if (deleting) return;
+
+    setDeleting(true);
+    try {
+      await accommodationsApi.remove(accommodation.id);
+      showToast('Đã xóa cơ sở lưu trú.');
       navigate('/admin/accommodations');
+    } catch (error) {
+      showToast(
+        error.errorCode === 'INVALID_STATE'
+          ? 'Không thể xóa cơ sở lưu trú vì còn loại phòng đang hoạt động.'
+          : error.message || 'Không thể xóa cơ sở lưu trú.',
+        'error'
+      );
+    } finally {
+      setDeleting(false);
+      setDeleteDialogOpen(false);
     }
-    setDeleteDialogOpen(false);
+  };
+
+  const handleFeaturedToggle = async () => {
+    if (featuredUpdating) return;
+
+    const nextFeatured = !accommodation.featured;
+    setFeaturedUpdating(true);
+    try {
+      const result = await accommodationsApi.updateFeatured(
+        accommodation.id,
+        nextFeatured
+      );
+      setAccommodation((prev) => ({
+        ...prev,
+        featured: result.isFeatured
+      }));
+      showToast(result.isFeatured ? 'Đã bật nổi bật.' : 'Đã tắt nổi bật.');
+    } catch (error) {
+      showToast(error.message || 'Không thể cập nhật nổi bật.', 'error');
+    } finally {
+      setFeaturedUpdating(false);
+    }
   };
 
 
@@ -153,6 +190,7 @@ export default function AccommodationDetailPage() {
             <button
               type="button"
               className="btn btn-outline-danger"
+              disabled={deleting}
               onClick={() => setDeleteDialogOpen(true)}
             >
               <Trash2 size={14} /> Xóa
@@ -196,6 +234,20 @@ export default function AccommodationDetailPage() {
                   vẫn fallback về số nếu statusLabel rỗng. */}
               <StatusBadge status={accommodation.statusLabel || accommodation.status} />
               {accommodation.featured && <span className="badge badge-warning">Nổi bật</span>}
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                disabled={featuredUpdating}
+                onClick={handleFeaturedToggle}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+              >
+                <Star
+                  size={13}
+                  fill={accommodation.featured ? '#F4C542' : 'none'}
+                  color={accommodation.featured ? '#F4C542' : '#6B7280'}
+                />
+                {accommodation.featured ? 'Tắt nổi bật' : 'Bật nổi bật'}
+              </button>
               {/* starCount = 0 (NULL/không hợp lệ) thì không render khối sao nào. */}
               {starCount > 0 && (
                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', color: '#F4C542', marginLeft: 'auto' }}>
@@ -808,7 +860,7 @@ export default function AccommodationDetailPage() {
       <ConfirmDialog
         isOpen={deleteDialogOpen}
         title="Xác nhận xóa cơ sở lưu trú"
-        message={`Bạn có chắc chắn muốn xóa cơ sở lưu trú "${accommodation.name}"? Thao tác này sẽ xóa toàn bộ loại phòng và bảng giá trực thuộc.`}
+        message={`Bạn có chắc chắn muốn xóa cơ sở lưu trú "${accommodation.name}" không?`}
         confirmLabel="Xóa cơ sở lưu trú"
         confirmVariant="danger"
         onConfirm={handleDeleteAccommodation}

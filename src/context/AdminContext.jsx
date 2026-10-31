@@ -194,20 +194,6 @@ export function AdminProvider({ children }) {
     showToast('Cập nhật cơ sở lưu trú thành công.');
   };
 
-  const deleteAccommodation = (id) => {
-    // Check for associated active bookings
-    const activeBookings = bookings.filter((b) => b.accommodation_id === Number(id) && b.booking_status !== 'Cancelled');
-    if (activeBookings.length > 0) {
-      showToast(`Cannot delete accommodation with ${activeBookings.length} active booking(s).`, 'warning');
-      return false;
-    }
-    setAccommodations((prev) => prev.filter((a) => a.id !== Number(id)));
-    // Also remove associated room types
-    setRoomTypes((prev) => prev.filter((r) => r.accommodation_id !== Number(id)));
-    showToast('Accommodation deleted successfully.', 'info');
-    return true;
-  };
-
   // Room Type CRUD
   const addRoomType = (roomData) => {
     const newId = Math.max(...roomTypes.map((r) => r.id), 0) + 1;
@@ -756,7 +742,6 @@ export function AdminProvider({ children }) {
         accommodations,
         addAccommodation,
         updateAccommodation,
-        deleteAccommodation,
 
         accommodationsLoading,
         accommodationsError,
