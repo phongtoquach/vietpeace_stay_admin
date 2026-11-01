@@ -652,9 +652,10 @@
 /* Công tắc ON/OFF tiện nghi */
 .amenity-toggle {
     position: relative;
-    width: 76px;
-    height: 36px;
-    padding: 3px;
+    margin-left: 8px;
+    width: 70px;
+    height: 30px;
+    padding: 2px;
     border: none;
     border-radius: 30px;
     background: #CFD8DC;
@@ -667,7 +668,7 @@
 /* Chữ ON/OFF */
 .amenity-toggle .toggle-label {
     position: absolute;
-    font-size: 12px;
+    font-size: 10px;
     font-weight: 800;
     color: #455A64;
 }
@@ -675,29 +676,29 @@
 /* Hình tròn */
 .amenity-toggle .toggle-circle {
     position: absolute;
-    width: 30px;
-    height: 30px;
+    width: 26px;
+    height: 26px;
     border-radius: 50%;
     transition: all 0.25s ease;
 }
 
 /* Trạng thái ON */
 .amenity-toggle.is-on .toggle-label {
-    left: 13px;
+    left: 11px;
 }
 
 .amenity-toggle.is-on .toggle-circle {
-    right: 3px;
+    right: 2px;
     background: #4CAF50;
 }
 
 /* Trạng thái OFF */
 .amenity-toggle.is-off .toggle-label {
-    right: 12px;
+    right: 11px;
 }
 
 .amenity-toggle.is-off .toggle-circle {
-    left: 3px;
+    left: 2px;
     background: #F44336;
 }
 
