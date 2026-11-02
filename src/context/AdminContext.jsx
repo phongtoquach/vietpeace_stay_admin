@@ -11,7 +11,6 @@ import { accommodationsApi } from '../api/accommodations.js';
 
 import { useAuth } from './AuthContext.jsx';
 import {
-  INITIAL_LOCATIONS,
   INITIAL_BOOKINGS,
   INITIAL_ROOM_WEEKDAY_RATES,
   INITIAL_RATE_PERIODS,
@@ -27,6 +26,14 @@ import {
 const AdminContext = createContext(null);
 const API_BASE_URL = 'http://localhost:3002/api/admin';
 
+async function readAdminResponse(response) {
+  const result = await response.json().catch(() => null);
+  if (!response.ok || !result?.success) {
+    throw new Error(result?.message || `Yêu cầu thất bại (HTTP ${response.status}).`);
+  }
+  return result;
+}
+
 export function AdminProvider({ children }) {
 
   // currentLoggedInUser: user backend trả về;
@@ -39,7 +46,7 @@ export function AdminProvider({ children }) {
   const isAuthenticated = Boolean(currentLoggedInUser);
 
   // Entity
-  const [locations, setLocations] = useState(INITIAL_LOCATIONS);
+  const [locations, setLocations] = useState([]);
   // Accommodations chỉ lấy từ API; không khởi tạo bằng mock để trang nào
   // chưa fetch sẽ hiện rỗng thay vì dữ liệu giả.
   const [accommodations, setAccommodations] = useState([]);
@@ -70,15 +77,14 @@ export function AdminProvider({ children }) {
 
   // Tải danh sách điểm đến từ Backend
   const fetchLocations = async () => {
-    try {
-      const res = await fetch(`${API_BASE_URL}/locations`, { credentials: "include" });
-      const result = await res.json();
-      if (result.success) {
-        setLocations(result.data.locationsList);
-      }
-    } catch (error) {
-      console.error("Lỗi tải điểm đến:", error);
+    const response = await fetch(`${API_BASE_URL}/locations`, { credentials: "include" });
+    const result = await readAdminResponse(response);
+    const locationsList = result.data?.locationsList;
+    if (!Array.isArray(locationsList)) {
+      throw new Error('Backend trả về danh sách điểm đến không hợp lệ.');
     }
+    setLocations(locationsList);
+    return locationsList;
   };
 
   // Tải danh sách điểm tham quan từ Backend
@@ -95,7 +101,7 @@ export function AdminProvider({ children }) {
   };
 
   useEffect(() => {
-    fetchLocations();
+    fetchLocations().catch((error) => console.error("Lỗi tải điểm đến:", error));
     fetchAttractions();
   }, [currentLoggedInUser]);
 
@@ -176,35 +182,66 @@ export function AdminProvider({ children }) {
     showToast('Đăng xuất được xử lý bởi AuthContext.', 'info');
   };
   // Location CRUD
-  const addLocation = (locData) => {
-    const newId = Math.max(...locations.map((l) => l.id), 0) + 1;
-    const newLocation = { ...locData, id: newId };
-    setLocations((prev) => [...prev, newLocation]);
-    showToast(`Thêm điểm đến "${newLocation.name}" thành công.`);
-    return newLocation;
+  const addLocation = async (locData) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/locations`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(locData)
+      });
+      const result = await readAdminResponse(response);
+      const newLocation = result.data?.newLocation;
+      if (!newLocation?.id) throw new Error('Backend không trả về điểm đến vừa tạo.');
+
+      setLocations((prev) => [...prev, newLocation]);
+      fetchLocations().catch((error) => console.error('Lỗi tải lại điểm đến:', error));
+      showToast(`Đã thêm điểm đến "${newLocation.name}".`);
+      return newLocation;
+    } catch (error) {
+      showToast(error.message, 'error');
+      throw error;
+    }
   };
 
-  const updateLocation = (id, locData) => {
-    setLocations((prev) => prev.map((l) => (l.id === Number(id) ? { ...l, ...locData } : l)));
-    showToast(`Cập nhật điểm đến thành công.`);
+  const updateLocation = async (id, locData) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/locations/${id}`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(locData)
+      });
+      const result = await readAdminResponse(response);
+      const updatedLocation = result.data?.updatedLocation;
+      if (!updatedLocation?.id) throw new Error('Backend không trả về điểm đến vừa cập nhật.');
+
+      setLocations((prev) => prev.map((location) => (
+        location.id === Number(id) ? { ...location, ...updatedLocation } : location
+      )));
+      fetchLocations().catch((error) => console.error('Lỗi tải lại điểm đến:', error));
+      showToast('Đã cập nhật điểm đến.');
+      return updatedLocation;
+    } catch (error) {
+      showToast(error.message, 'error');
+      throw error;
+    }
   };
 
-  const deleteLocation = (id) => {
-    // Check if location has child locations
-    const hasChildren = locations.some((l) => l.parent_location_id === Number(id));
-    if (hasChildren) {
-      showToast('Không thể xóa điểm đến có điểm đến con trực thuộc. Vui lòng gán lại trước.', 'warning');
+  const deleteLocation = async (id) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/locations/${id}`, {
+        method: 'DELETE',
+        credentials: 'include'
+      });
+      await readAdminResponse(response);
+      setLocations((prev) => prev.filter((location) => location.id !== Number(id)));
+      showToast('Đã xóa điểm đến.', 'info');
+      return true;
+    } catch (error) {
+      showToast(error.message, 'error');
       return false;
     }
-    // Check if accommodations reference this location
-    const hasAccommodations = accommodations.some((a) => a.location_id === Number(id));
-    if (hasAccommodations) {
-      showToast('Không thể xóa điểm đến đang liên kết với cơ sở lưu trú.', 'warning');
-      return false;
-    }
-    setLocations((prev) => prev.filter((l) => l.id !== Number(id)));
-    showToast('Xóa điểm đến thành công.', 'info');
-    return true;
   };
 
   // Accommodation CRUD
