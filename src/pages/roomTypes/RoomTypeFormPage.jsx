@@ -84,7 +84,7 @@ const FIELD_TAB_MAP = {
   max_adults: 'capacity',
   max_children: 'capacity',
   max_occupancy: 'capacity',
-  base_price: 'capacity',
+  base_price: 'general',
   extra_adult_fee: 'capacity',
   extra_child_fee: 'capacity',
 
@@ -211,6 +211,18 @@ export default function RoomTypeFormPage() {
     6: 0,
     7: 0
   });
+
+  // Số người thêm tối đa theo từng giới hạn độc lập.
+  const extraAdultCount = Math.max(
+    0,
+    (Number(formData.max_adults) || 0) - (Number(formData.included_adults) || 0)
+  );
+  const extraChildCount = Math.max(
+    0,
+    (Number(formData.max_children) || 0) - (Number(formData.included_children) || 0)
+  );
+  const extraAdultMaxFee = extraAdultCount * (Number(formData.extra_adult_fee) || 0);
+  const extraChildMaxFee = extraChildCount * (Number(formData.extra_child_fee) || 0);
 
   // Amenity filters
   const [amenityCategoryFilter, setAmenityCategoryFilter] = useState('');
@@ -345,6 +357,16 @@ export default function RoomTypeFormPage() {
     }));
     if (errors[name]) {
       setErrors((prev) => ({ ...prev, [name]: null }));
+    }
+  };
+
+  // Ô giá gốc là text để dễ nhập, nhưng chỉ giữ chữ số
+  // trước khi chuyển thành số ở toRoomTypeWritePayload.
+  const handleBasePriceChange = (e) => {
+    const digits = e.target.value.replace(/\D/g, '');
+    setFormData((prev) => ({ ...prev, base_price: digits }));
+    if (errors.base_price) {
+      setErrors((prev) => ({ ...prev, base_price: null }));
     }
   };
 
@@ -553,6 +575,94 @@ export default function RoomTypeFormPage() {
     return Array.from(set);
   }, [amenityOptions]);
 
+  // Ràng buộc chéo theo CHECK constraint của bảng room_types.
+  const validateCapacityRules = () => {
+    const nextErrors = {};
+
+    const includedAdults = Number(formData.included_adults);
+    const includedChildren = Number(formData.included_children);
+    const maxAdults = Number(formData.max_adults);
+    const maxChildren = Number(formData.max_children);
+    const maxOccupancy = Number(formData.max_occupancy);
+    const extraAdultFee = Number(formData.extra_adult_fee);
+    const extraChildFee = Number(formData.extra_child_fee);
+
+    if (!Number.isInteger(includedAdults) || includedAdults < 1) {
+      nextErrors.included_adults = 'Số người lớn đi kèm phải là số nguyên từ 1 trở lên.';
+    }
+    if (!Number.isInteger(includedChildren) || includedChildren < 0) {
+      nextErrors.included_children = 'Số trẻ em đi kèm phải là số nguyên từ 0 trở lên.';
+    }
+    if (!Number.isInteger(maxAdults) || maxAdults < 1) {
+      nextErrors.max_adults = 'Số người lớn tối đa phải là số nguyên từ 1 trở lên.';
+    }
+    if (!Number.isInteger(maxChildren) || maxChildren < 0) {
+      nextErrors.max_children = 'Số trẻ em tối đa phải là số nguyên từ 0 trở lên.';
+    }
+    if (!Number.isInteger(maxOccupancy) || maxOccupancy < 1) {
+      nextErrors.max_occupancy = 'Sức chứa tối đa phải là số nguyên từ 1 trở lên.';
+    }
+    if (!Number.isFinite(extraAdultFee) || extraAdultFee < 0) {
+      nextErrors.extra_adult_fee = 'Phụ phí người lớn thêm không được âm.';
+    }
+    if (!Number.isFinite(extraChildFee) || extraChildFee < 0) {
+      nextErrors.extra_child_fee = 'Phụ phí trẻ em thêm không được âm.';
+    }
+
+    if (
+      !nextErrors.included_adults &&
+      !nextErrors.max_adults &&
+      includedAdults > maxAdults
+    ) {
+      nextErrors.included_adults =
+        'Số người lớn đi kèm không được lớn hơn số người lớn tối đa.';
+    }
+    if (
+      !nextErrors.included_children &&
+      !nextErrors.max_children &&
+      includedChildren > maxChildren
+    ) {
+      nextErrors.included_children =
+        'Số trẻ em đi kèm không được lớn hơn số trẻ em tối đa.';
+    }
+    if (
+      !nextErrors.max_adults &&
+      !nextErrors.max_occupancy &&
+      maxAdults > maxOccupancy
+    ) {
+      nextErrors.max_adults =
+        'Số người lớn tối đa không được lớn hơn sức chứa tối đa.';
+    }
+    if (
+      !nextErrors.max_children &&
+      !nextErrors.max_occupancy &&
+      maxChildren > maxOccupancy
+    ) {
+      nextErrors.max_children =
+        'Số trẻ em tối đa không được lớn hơn sức chứa tối đa.';
+    }
+    if (
+      !nextErrors.included_adults &&
+      !nextErrors.included_children &&
+      !nextErrors.max_occupancy &&
+      includedAdults + includedChildren > maxOccupancy
+    ) {
+      nextErrors.max_occupancy =
+        'Số khách đi kèm tiêu chuẩn không được lớn hơn sức chứa tối đa.';
+    }
+    if (
+      !nextErrors.max_adults &&
+      !nextErrors.max_children &&
+      !nextErrors.max_occupancy &&
+      maxAdults + maxChildren < maxOccupancy
+    ) {
+      nextErrors.max_occupancy =
+        'Sức chứa tối đa không được lớn hơn tổng số người lớn tối đa và trẻ em tối đa.';
+    }
+
+    return nextErrors;
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (isSubmitting || uploadingCount > 0) return;
@@ -576,6 +686,13 @@ export default function RoomTypeFormPage() {
       });
       setErrors(imageErrors);
       setActiveTab('media');
+      return;
+    }
+
+    const capacityErrors = validateCapacityRules();
+    if (Object.keys(capacityErrors).length > 0) {
+      setErrors(capacityErrors);
+      setActiveTab('capacity');
       return;
     }
 
@@ -817,6 +934,19 @@ export default function RoomTypeFormPage() {
                   ]}
                 />
 
+                <FormInput
+                  label="Giá gốc theo đêm (VNĐ)"
+                  name="base_price"
+                  type="text"
+                  inputMode="numeric"
+                  value={formData.base_price}
+                  onChange={handleBasePriceChange}
+                  placeholder="VD: 450000"
+                  required
+                  error={errors.base_price}
+                  helperText="Chỉ nhập chữ số. Giá gốc dùng làm mốc tính giá các ngày trong tuần."
+                />
+
                 <div className="col-span-full">
                   <FormTextarea
                     label="Mô tả ngắn"
@@ -869,7 +999,6 @@ export default function RoomTypeFormPage() {
                     value={formData.bed_type}
                     onChange={handleChange}
                     placeholder="VD: 1 giường King (1,8 m x 2 m)"
-                    helperText="Lấy từ cột bed_description trong DB."
                   />
 
                   <FormInput
@@ -879,7 +1008,7 @@ export default function RoomTypeFormPage() {
                     min="1"
                     value={formData.quantity}
                     onChange={handleChange}
-                    helperText="Số lượng phòng vật lý thuộc loại phòng này."
+                    helperText="Số lượng phòng thực tế của cơ sở."
                   />
                 </div>
               </div>
@@ -898,6 +1027,7 @@ export default function RoomTypeFormPage() {
                     min="1"
                     value={formData.included_adults}
                     onChange={handleChange}
+                    error={errors.included_adults}
                   />
 
                   <FormInput
@@ -907,6 +1037,7 @@ export default function RoomTypeFormPage() {
                     min="0"
                     value={formData.included_children}
                     onChange={handleChange}
+                    error={errors.included_children}
                   />
 
                   <FormInput
@@ -926,6 +1057,7 @@ export default function RoomTypeFormPage() {
                     min="0"
                     value={formData.max_children}
                     onChange={handleChange}
+                    error={errors.max_children}
                   />
 
                   <FormInput
@@ -936,37 +1068,39 @@ export default function RoomTypeFormPage() {
                     value={formData.max_occupancy}
                     onChange={handleChange}
                     error={errors.max_occupancy}
-                    helperText="Tổng số lượng khách lớn nhất phòng có thể tiếp nhận."
-                  />
-
-                  <FormInput
-                    label="Giá gốc theo đêm (VNĐ)"
-                    name="base_price"
-                    type="number"
-                    step="50000"
-                    value={formData.base_price}
-                    onChange={handleChange}
-                    required
-                    error={errors.base_price}
-                    helperText="Giá cơ sở tiêu chuẩn dùng để làm mốc tính giá các ngày trong tuần."
+                    helperText="Giới hạn tổng khách; không được lớn hơn số người lớn tối đa + số trẻ em tối đa."
                   />
 
                   <FormInput
                     label="Phụ phí người lớn thêm (VNĐ/đêm)"
                     name="extra_adult_fee"
                     type="number"
+                    min="0"
                     step="50000"
                     value={formData.extra_adult_fee}
                     onChange={handleChange}
+                    error={errors.extra_adult_fee}
+                    helperText={
+                      extraAdultCount > 0
+                        ? `Áp dụng cho tối đa ${extraAdultCount} người lớn thêm/đêm (${formatVND(extraAdultMaxFee)}).`
+                        : undefined
+                    }
                   />
 
                   <FormInput
                     label="Phụ phí trẻ em thêm (VNĐ/đêm)"
                     name="extra_child_fee"
                     type="number"
+                    min="0"
                     step="50000"
                     value={formData.extra_child_fee}
                     onChange={handleChange}
+                    error={errors.extra_child_fee}
+                    helperText={
+                      extraChildCount > 0
+                        ? `Áp dụng cho tối đa ${extraChildCount} trẻ em thêm/đêm (${formatVND(extraChildMaxFee)}).`
+                        : undefined
+                    }
                   />
                 </div>
               </div>
@@ -1013,25 +1147,6 @@ export default function RoomTypeFormPage() {
                 >
                   Đồng bộ theo giá gốc ({formatVND(Number(formData.base_price) || 0)})
                 </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-sm"
-                  onClick={() => {
-                    const base = Number(formData.base_price) || 1000000;
-                    setWeekdayRates({
-                      1: base,
-                      2: base,
-                      3: base,
-                      4: base,
-                      5: Math.round((base * 1.1) / 10000) * 10000,
-                      6: Math.round((base * 1.2) / 10000) * 10000,
-                      7: Math.round((base * 1.15) / 10000) * 10000
-                    });
-                  }}
-                  style={{ fontSize: '11.5px' }}
-                >
-                  + Tăng phụ thu cuối tuần (+10% - 20%)
-                </button>
               </div>
             </div>
             <div className="admin-card-body">
@@ -1066,8 +1181,8 @@ export default function RoomTypeFormPage() {
                       key={d.day}
                       style={{
                         padding: '10px 12px',
-                        border: d.isWeekend ? '1px solid #FECACA' : '1px solid #E5E7EB',
-                        backgroundColor: d.isWeekend ? '#FFFBFB' : '#F9FAFB',
+                        border: '1px solid #E5E7EB',
+                        backgroundColor: '#F9FAFB',
                         borderRadius: '4px'
                       }}
                     >
@@ -1083,7 +1198,7 @@ export default function RoomTypeFormPage() {
                           style={{
                             fontSize: '12.5px',
                             fontWeight: 600,
-                            color: d.isWeekend ? '#B91C1C' : '#1F2937'
+                            color: '#1F2937'
                           }}
                         >
                           Ngày {d.day}: {d.vietnamese}
@@ -1093,8 +1208,8 @@ export default function RoomTypeFormPage() {
                             fontSize: '10.5px',
                             padding: '1px 6px',
                             borderRadius: '3px',
-                            backgroundColor: d.isWeekend ? '#FEE2E2' : '#E5E7EB',
-                            color: d.isWeekend ? '#991B1B' : '#4B5563'
+                            backgroundColor: '#E5E7EB',
+                            color: '#4B5563'
                           }}
                         >
                           {d.isWeekend ? 'Cuối tuần' : 'Ngày thường'}
@@ -1116,7 +1231,7 @@ export default function RoomTypeFormPage() {
                           style={{
                             textAlign: 'right',
                             fontWeight: 600,
-                            borderColor: d.isWeekend ? '#FCA5A5' : '#D1D5DB'
+                            borderColor: '#D1D5DB'
                           }}
                         />
                         <span style={{ fontSize: '12px', fontWeight: 600, color: '#6B7280' }}>VNĐ</span>

@@ -262,14 +262,6 @@ export default function RoomTypeListPage() {
       )
     },
     {
-      header: 'Người lớn',
-      accessor: 'includedAdults',
-      sortable: true,
-      width: '105px',
-      align: 'center',
-      render: (row) => <span className="tabular-nums">{row.includedAdults} người lớn</span>
-    },
-    {
       header: 'Sức chứa tối đa',
       accessor: 'maxOccupancy',
       sortable: true,

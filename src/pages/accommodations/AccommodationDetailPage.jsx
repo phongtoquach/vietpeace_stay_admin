@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { accommodationsApi } from '../../api/accommodations.js';
+import { roomTypesApi } from '../../api/roomTypes.js';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useAdmin } from '../../context/AdminContext.jsx';
 import PageHeader from '../../components/common/PageHeader.jsx';
@@ -27,7 +28,6 @@ export default function AccommodationDetailPage() {
   const {
     roomRates,
     ratePeriods,
-    getRoomWeekdayRates,
     showToast
   } = useAdmin();
 
@@ -72,6 +72,74 @@ export default function AccommodationDetailPage() {
     };
   }, [id]);
 
+  const [roomPricingState, setRoomPricingState] = useState({
+    accommodationId: null,
+    byRoom: {},
+    error: null
+  });
+
+  // DTO chi tiết cơ sở chỉ trả minPrice, còn giá gốc và bảng giá 7 ngày
+  // nằm trong DTO chi tiết của từng room type.
+  useEffect(() => {
+    const roomTypes = accommodation?.room_types || [];
+
+    if (roomTypes.length === 0) {
+      return undefined;
+    }
+
+    const accommodationId = accommodation.id;
+    let cancelled = false;
+
+    Promise.all(
+      roomTypes.map(async (room) => {
+        try {
+          const payload = await roomTypesApi.getDetail(room.id);
+          const rateMap = {};
+          (payload.data?.weekdayRates || []).forEach((rate) => {
+            rateMap[rate.dayOfWeek] = rate.price;
+          });
+          return {
+            roomId: room.id,
+            basePrice: payload.data?.basePrice ?? null,
+            rateMap
+          };
+        } catch (error) {
+          console.error(
+            `[ERROR] Tải giá của loại phòng #${room.id} thất bại:`,
+            error
+          );
+          return { roomId: room.id, basePrice: null, rateMap: null };
+        }
+      })
+    ).then((results) => {
+      if (cancelled) return;
+
+      const byRoom = {};
+      let failedCount = 0;
+
+      results.forEach(({ roomId, basePrice, rateMap }) => {
+        if (rateMap) {
+          byRoom[roomId] = { basePrice, rateMap };
+        } else {
+          failedCount += 1;
+        }
+      });
+
+      setRoomPricingState({
+        accommodationId,
+        byRoom,
+        error:
+          failedCount > 0
+            ? `${failedCount}/${roomTypes.length} loại phòng không tải được bảng giá.`
+            : null
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [accommodation]);
+
   if (detailLoading) {
     return <div style={{ padding: '30px' }}>Đang tải chi tiết...</div>;
   }
@@ -104,6 +172,19 @@ export default function AccommodationDetailPage() {
   const propertyRoomTypes = accommodation.room_types || [];
   const propertyAmenities = accommodation.amenities || [];
   const propertyAttractions = accommodation.attractions || [];
+
+  const roomPricingReady = roomPricingState.accommodationId === accommodation.id;
+  const roomPricingByRoomType = roomPricingReady ? roomPricingState.byRoom : {};
+  const weekdayRatesError = roomPricingReady ? roomPricingState.error : null;
+  const weekdayRatesLoading = propertyRoomTypes.length > 0 && !roomPricingReady;
+
+  const basePriceForRoom = (roomId) => {
+    if (weekdayRatesLoading) return 'Đang tải...';
+    const basePrice = roomPricingByRoomType[roomId]?.basePrice;
+    return basePrice === undefined || basePrice === null
+      ? '—'
+      : formatVND(basePrice);
+  };
 
   // Địa chỉ đầy đủ = số nhà/đường + phường/xã + tỉnh/thành.
   // DTO detail đã có ward.name và province.name từ backend;
@@ -475,7 +556,7 @@ export default function AccommodationDetailPage() {
                         <span style={{ color: '#6B7280', fontSize: '11px' }}>Tối đa: {room.max_occupancy} khách</span>
                       </td>
                       <td style={{ textAlign: 'right', fontWeight: 600, color: '#292D32' }} className="tabular-nums">
-                        {formatVND(room.base_price)}
+                        {basePriceForRoom(room.id)}
                       </td>
                       <td>
                         <StatusBadge status={room.statusLabel} />
@@ -790,6 +871,16 @@ export default function AccommodationDetailPage() {
                 Mở ma trận chỉnh sửa giá
               </Link>
             </div>
+            {weekdayRatesLoading && (
+              <div style={{ padding: '0 16px 8px', fontSize: '12px', color: '#6B7280' }}>
+                Đang tải bảng giá 7 ngày...
+              </div>
+            )}
+            {weekdayRatesError && (
+              <div style={{ padding: '0 16px 8px', fontSize: '12px', color: '#B91C1C' }}>
+                {weekdayRatesError}
+              </div>
+            )}
             <div className="table-responsive" style={{ border: 'none' }}>
               <table className="data-table">
                 <thead>
@@ -799,9 +890,9 @@ export default function AccommodationDetailPage() {
                     <th style={{ textAlign: 'right' }}>Thứ 3 (2)</th>
                     <th style={{ textAlign: 'right' }}>Thứ 4 (3)</th>
                     <th style={{ textAlign: 'right' }}>Thứ 5 (4)</th>
-                    <th style={{ textAlign: 'right', backgroundColor: '#FFFDF5' }}>Thứ 6 (5)</th>
-                    <th style={{ textAlign: 'right', backgroundColor: '#FFF5F5', color: '#B91C1C' }}>Thứ 7 (6)</th>
-                    <th style={{ textAlign: 'right', backgroundColor: '#FFF5F5', color: '#B91C1C' }}>Chủ Nhật (7)</th>
+                    <th style={{ textAlign: 'right' }}>Thứ 6 (5)</th>
+                    <th style={{ textAlign: 'right' }}>Thứ 7 (6)</th>
+                    <th style={{ textAlign: 'right' }}>Chủ Nhật (7)</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -813,11 +904,12 @@ export default function AccommodationDetailPage() {
                     </tr>
                   ) : (
                     propertyRoomTypes.map((room) => {
-                      const rates = getRoomWeekdayRates(room.id);
-                      const rateMap = {};
-                      rates.forEach((r) => {
-                        rateMap[r.day_of_week] = r.price;
-                      });
+                      const rateMap = roomPricingByRoomType[room.id]?.rateMap || {};
+                      const renderRate = (dayOfWeek) => (
+                        rateMap[dayOfWeek] === undefined || rateMap[dayOfWeek] === null
+                          ? '—'
+                          : formatVND(rateMap[dayOfWeek])
+                      );
                       return (
                         <tr key={room.id}>
                           <td>
@@ -825,25 +917,25 @@ export default function AccommodationDetailPage() {
                             <div style={{ fontSize: '11px', color: '#6B7280' }}>Mã: {room.code}</div>
                           </td>
                           <td style={{ textAlign: 'right' }} className="tabular-nums">
-                            {formatVND(rateMap[1] || room.base_price)}
+                            {renderRate(1)}
                           </td>
                           <td style={{ textAlign: 'right' }} className="tabular-nums">
-                            {formatVND(rateMap[2] || room.base_price)}
+                            {renderRate(2)}
                           </td>
                           <td style={{ textAlign: 'right' }} className="tabular-nums">
-                            {formatVND(rateMap[3] || room.base_price)}
+                            {renderRate(3)}
                           </td>
                           <td style={{ textAlign: 'right' }} className="tabular-nums">
-                            {formatVND(rateMap[4] || room.base_price)}
+                            {renderRate(4)}
                           </td>
-                          <td style={{ textAlign: 'right', backgroundColor: '#FFFDF5', color: '#B45309', fontWeight: 600 }} className="tabular-nums">
-                            {formatVND(rateMap[5] || room.base_price)}
+                          <td style={{ textAlign: 'right' }} className="tabular-nums">
+                            {renderRate(5)}
                           </td>
-                          <td style={{ textAlign: 'right', backgroundColor: '#FFF5F5', color: '#B91C1C', fontWeight: 700 }} className="tabular-nums">
-                            {formatVND(rateMap[6] || room.base_price)}
+                          <td style={{ textAlign: 'right' }} className="tabular-nums">
+                            {renderRate(6)}
                           </td>
-                          <td style={{ textAlign: 'right', backgroundColor: '#FFF5F5', color: '#B91C1C', fontWeight: 700 }} className="tabular-nums">
-                            {formatVND(rateMap[7] || room.base_price)}
+                          <td style={{ textAlign: 'right' }} className="tabular-nums">
+                            {renderRate(7)}
                           </td>
                         </tr>
                       );
