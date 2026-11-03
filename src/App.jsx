@@ -23,6 +23,7 @@ import AttractionFormPage from './pages/attractions/AttractionFormPage.jsx';
 
 // Room Types
 import RoomTypeListPage from './pages/roomTypes/RoomTypeListPage.jsx';
+import RoomTypeDetailPage from './pages/roomTypes/RoomTypeDetailPage.jsx';
 import RoomTypeFormPage from './pages/roomTypes/RoomTypeFormPage.jsx';
 
 // Locations
@@ -94,6 +95,7 @@ export default function App() {
 						{/* Room Types */}
 						<Route path="room-types" element={<RoomTypeListPage />} />
 						<Route path="room-types/create" element={<RoomTypeFormPage />} />
+						<Route path="room-types/:id" element={<RoomTypeDetailPage />} />
 						<Route path="room-types/:id/edit" element={<RoomTypeFormPage />} />
 
 						{/* Locations */}

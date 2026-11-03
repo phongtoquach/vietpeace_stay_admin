@@ -229,7 +229,7 @@ export default function RoomTypeListPage() {
       render: (row) => (
         <div>
           <Link
-            to={`/admin/room-types/${row.id}/edit`}
+            to={`/admin/room-types/${row.id}`}
             style={{ fontWeight: 600, color: '#292D32' }}
           >
             {row.name}
