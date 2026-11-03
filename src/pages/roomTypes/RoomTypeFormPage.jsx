@@ -165,7 +165,13 @@ export default function RoomTypeFormPage() {
   const [searchParams] = useSearchParams();
   const preselectedAccId = searchParams.get('accommodation_id');
   const navigate = useNavigate();
-  const { showToast } = useAdmin();
+  const { showToast, currentUser } = useAdmin();
+
+  // Role từ server session. Backend chặn manager đổi accommodation của
+  // room type (403) — disable select ở đây chỉ để người dùng không mất công.
+  const isAdmin = currentUser?.role === 'ADMIN';
+  // Khi Sửa mà không phải ADMIN: room type gắn chặt cơ sở hiện tại (policy P2).
+  const lockAccommodationSelect = Boolean(preselectedAccId) || (isEdit && !isAdmin);
 
   // 5 Tabs in exact required order
   const [activeTab, setActiveTab] = useState('general');
@@ -249,9 +255,12 @@ export default function RoomTypeFormPage() {
 
         const items = payload.data?.items || [];
         setAccommodationOptions(items);
+        // Không tự chọn cơ sở đầu tiên (trước đây `items[0]?.id` được gửi lên
+        // âm thầm nếu người dùng bỏ trống). Create để rỗng: backend trả
+        // 400 "Vui lòng chọn cơ sở lưu trú" và form tự nhảy đúng tab.
         setFormData((prev) => ({
           ...prev,
-          accommodation_id: prev.accommodation_id || items[0]?.id || '',
+          accommodation_id: prev.accommodation_id || '',
         }));
       } catch (error) {
         if (cancelled) return;
@@ -698,6 +707,11 @@ export default function RoomTypeFormPage() {
 
     const payload = toRoomTypeWritePayload(formData, weekdayRates);
 
+    // Create luôn tạo bản nháp; đổi trạng thái do trang Sửa đảm nhận
+    // (đồng bộ pattern AccommodationFormPage.toApiCreatePayload).
+    // Backend room_type_service cũng mặc định status = 0 khi create không gửi.
+    if (!isEdit) payload.status = 0;
+
     console.group('[RoomTypeFormPage.handleSubmit]');
     console.log('[1] chế độ:', isEdit ? 'cập nhật' : 'tạo mới');
     console.log('[2] payload:', payload);
@@ -917,22 +931,32 @@ export default function RoomTypeFormPage() {
                   onChange={handleChange}
                   options={accommodationOptions.map((a) => ({ value: a.id, label: a.name }))}
                   required
-                  disabled={Boolean(preselectedAccId)}
+                  disabled={lockAccommodationSelect}
                   error={errors.accommodation_id}
-                  helperText={preselectedAccId ? 'Đã được chỉ định từ cơ sở lưu trú cha.' : ''}
+                  helperText={
+                    preselectedAccId
+                      ? 'Đã được chỉ định từ cơ sở lưu trú cha.'
+                      : isEdit && !isAdmin
+                        ? 'Loại phòng gắn chặt cơ sở hiện tại; chỉ ADMIN mới đổi được cơ sở.'
+                        : ''
+                  }
                 />
 
-                <FormSelect
-                  label="Trạng thái"
-                  name="status"
-                  value={formData.status}
-                  onChange={handleChange}
-                  options={[
-                    { value: 0, label: 'Bản nháp' },
-                    { value: 1, label: 'Đang hoạt động' },
-                    { value: 2, label: 'Ngừng hoạt động' }
-                  ]}
-                />
+                {/* Trạng thái chỉ có ở trang Sửa: create luôn tạo bản nháp,
+                    người dùng kích hoạt sau khi nội dung đã đầy đủ. */}
+                {isEdit && (
+                  <FormSelect
+                    label="Trạng thái"
+                    name="status"
+                    value={formData.status}
+                    onChange={handleChange}
+                    options={[
+                      { value: 0, label: 'Bản nháp' },
+                      { value: 1, label: 'Đang hoạt động' },
+                      { value: 2, label: 'Ngừng hoạt động' }
+                    ]}
+                  />
+                )}
 
                 <FormInput
                   label="Giá gốc theo đêm (VNĐ)"

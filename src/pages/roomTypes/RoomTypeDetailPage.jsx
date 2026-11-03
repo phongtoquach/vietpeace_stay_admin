@@ -55,6 +55,8 @@ export default function RoomTypeDetailPage() {
   const [roomType, setRoomType] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  // Tăng để nạp lại sau khi "Thử lại" ở màn lỗi server.
+  const [reloadKey, setReloadKey] = useState(0);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [selectedImage, setSelectedImage] = useState(null);
@@ -86,7 +88,7 @@ export default function RoomTypeDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [id]);
+  }, [id, reloadKey]);
 
   const rateMap = useMemo(
     () => Object.fromEntries((roomType?.weekdayRates || []).map((rate) => [rate.dayOfWeek, rate.price])),
@@ -114,15 +116,40 @@ export default function RoomTypeDetailPage() {
   }
 
   if (error || !roomType) {
+    // 404 = backend xác nhận không tồn tại hoặc ngoài scope quản lý.
+    if (error?.status === 404) {
+      return (
+        <div style={{ padding: '30px', textAlign: 'center' }}>
+          <h2 style={{ fontSize: '18px', fontWeight: 700 }}>Không tìm thấy loại phòng</h2>
+          <p style={{ color: '#6B7280', margin: '8px 0 16px' }}>
+            Loại phòng mã #{id} không tồn tại hoặc đã bị gỡ bỏ.
+          </p>
+          <Link to="/admin/room-types" className="btn btn-secondary">
+            <ArrowLeft size={14} /> Quay lại danh sách
+          </Link>
+        </div>
+      );
+    }
+
+    // Lỗi khác (500/network): không kết luận "không tồn tại", cho thử lại.
     return (
       <div style={{ padding: '30px', textAlign: 'center' }}>
-        <h2 style={{ fontSize: '18px', fontWeight: 700 }}>Không tìm thấy loại phòng</h2>
+        <h2 style={{ fontSize: '18px', fontWeight: 700 }}>Không tải được chi tiết loại phòng</h2>
         <p style={{ color: '#6B7280', margin: '8px 0 16px' }}>
-          Loại phòng mã #{id} không tồn tại hoặc đã bị gỡ bỏ.
+          {error?.message || 'Đã xảy ra lỗi khi tải dữ liệu. Vui lòng thử lại.'}
         </p>
-        <Link to="/admin/room-types" className="btn btn-secondary">
-          <ArrowLeft size={14} /> Quay lại danh sách
-        </Link>
+        <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => setReloadKey((key) => key + 1)}
+          >
+            Thử lại
+          </button>
+          <Link to="/admin/room-types" className="btn btn-secondary">
+            <ArrowLeft size={14} /> Quay lại danh sách
+          </Link>
+        </div>
       </div>
     );
   }

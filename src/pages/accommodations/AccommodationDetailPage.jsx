@@ -7,7 +7,8 @@ import PageHeader from '../../components/common/PageHeader.jsx';
 import StatusBadge from '../../components/common/StatusBadge.jsx';
 import ConfirmDialog from '../../components/common/ConfirmDialog.jsx';
 // Helper định dạng dùng chung, không phụ thuộc dữ liệu mock.
-import { formatVND, formatDateVN } from '../../data/entities.js';
+// (formatDateVN đã bỏ — chỉ section rate_periods mock từng dùng.)
+import { formatVND } from '../../data/entities.js';
 import {
   ArrowLeft,
   Edit2,
@@ -18,22 +19,27 @@ import {
   Star,
   Plus,
   CheckCircle,
-  Calendar,
-  DollarSign
+  Calendar
 } from 'lucide-react';
 
 export default function AccommodationDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const {
-    roomRates,
-    ratePeriods,
+    currentUser,
     showToast
   } = useAdmin();
+
+  // Role từ server session — ẩn nút Xóa cho non-ADMIN chỉ là UX,
+  // backend DELETE đã có requireRole("ADMIN") thực thi quyền thật.
+  const isAdmin = currentUser?.role === 'ADMIN';
 
   const [accommodation, setAccommodation] = useState(null);
   const [detailLoading, setDetailLoading] = useState(true);
   const [detailError, setDetailError] = useState(null);
+
+  // Tăng để nạp lại chi tiết sau khi "Thử lại" ở màn lỗi server.
+  const [reloadKey, setReloadKey] = useState(0);
 
   const [activeTab, setActiveTab] = useState('general');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -70,7 +76,7 @@ export default function AccommodationDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [id]);
+  }, [id, reloadKey]);
 
   const [roomPricingState, setRoomPricingState] = useState({
     accommodationId: null,
@@ -145,15 +151,41 @@ export default function AccommodationDetailPage() {
   }
 
   if (detailError || !accommodation) {
+    // 404 = backend xác nhận không tồn tại hoặc ngoài scope quản lý.
+    if (detailError?.status === 404) {
+      return (
+        <div style={{ padding: '30px', textAlign: 'center' }}>
+          <h2>Không tìm thấy cơ sở lưu trú</h2>
+          <p>
+            Cơ sở lưu trú có mã #{id} không tồn tại hoặc đã bị gỡ bỏ.
+          </p>
+          <Link to="/admin/accommodations" className="btn btn-secondary">
+            <ArrowLeft size={14} /> Quay lại danh sách
+          </Link>
+        </div>
+      );
+    }
+
+    // Các lỗi khác (500/network): không kết luận "không tồn tại",
+    // cho người dùng thử lại thay vì hiện màn nhầm như bản ghi đã mất.
     return (
       <div style={{ padding: '30px', textAlign: 'center' }}>
-        <h2>Không tìm thấy cơ sở lưu trú</h2>
-        <p>
-          Cơ sở lưu trú có mã #{id} không tồn tại hoặc đã bị gỡ bỏ.
+        <h2>Không tải được chi tiết cơ sở lưu trú</h2>
+        <p style={{ color: '#6B7280' }}>
+          {detailError?.message || 'Đã xảy ra lỗi khi tải dữ liệu. Vui lòng thử lại.'}
         </p>
-        <Link to="/admin/accommodations" className="btn btn-secondary">
-          <ArrowLeft size={14} /> Quay lại danh sách
-        </Link>
+        <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => setReloadKey((key) => key + 1)}
+          >
+            Thử lại
+          </button>
+          <Link to="/admin/accommodations" className="btn btn-secondary">
+            <ArrowLeft size={14} /> Quay lại danh sách
+          </Link>
+        </div>
       </div>
     );
   }
@@ -268,14 +300,16 @@ export default function AccommodationDetailPage() {
             <Link to={`/admin/accommodations/${accommodation.id}/edit`} className="btn btn-primary">
               <Edit2 size={14} /> Chỉnh sửa cơ sở
             </Link>
-            <button
-              type="button"
-              className="btn btn-outline-danger"
-              disabled={deleting}
-              onClick={() => setDeleteDialogOpen(true)}
-            >
-              <Trash2 size={14} /> Xóa
-            </button>
+            {isAdmin && (
+              <button
+                type="button"
+                className="btn btn-outline-danger"
+                disabled={deleting}
+                onClick={() => setDeleteDialogOpen(true)}
+              >
+                <Trash2 size={14} /> Xóa
+              </button>
+            )}
           </div>
         }
       />
@@ -633,7 +667,14 @@ export default function AccommodationDetailPage() {
             </div>
             <div style={{ display: 'flex', gap: '8px' }}>
               <Link
-                to={`/admin/attractions?locationId=${accommodation.location_id}`}
+                // Adapter detail không có field location_id phẳng; location là
+                // object { id, name }. Trước đây template đọc location_id
+                // undefined nên URL thành ?locationId=undefined.
+                to={`/admin/attractions${
+                  accommodation.location?.id
+                    ? `?locationId=${accommodation.location.id}`
+                    : ''
+                }`}
                 className="btn btn-secondary btn-sm"
               >
                 Quản lý điểm tham quan khu vực
@@ -792,71 +833,10 @@ export default function AccommodationDetailPage() {
       {/* Tab 5: Pricing & Rate Periods */}
       {activeTab === 'pricing' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          {/* Rate Periods Section */}
-          <div className="admin-card">
-            <div className="admin-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
-              <div>
-                <div className="admin-card-title">Kỳ giá đặc biệt của cơ sở này (rate_periods)</div>
-                <div style={{ fontSize: '12px', color: '#6B7280' }}>
-                  Giai đoạn mùa cao điểm, dịp lễ Tết áp dụng riêng cho {accommodation.name}.
-                </div>
-              </div>
-              <div style={{ display: 'flex', gap: '6px' }}>
-                <Link to={`/admin/room-rates?tab=special&accId=${accommodation.id}`} className="btn btn-secondary btn-sm">
-                  <DollarSign size={13} /> Cấu hình giá kỳ đặc biệt
-                </Link>
-                <Link to="/admin/rate-periods" className="btn btn-primary btn-sm">
-                  <Plus size={13} /> Quản lý kỳ giá đặc biệt
-                </Link>
-              </div>
-            </div>
-            <div className="table-responsive" style={{ border: 'none' }}>
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th style={{ width: '60px' }}>Mã</th>
-                    <th>Tên kỳ giá đặc biệt</th>
-                    <th>Ngày bắt đầu</th>
-                    <th>Ngày kết thúc</th>
-                    <th>Trạng thái</th>
-                    <th style={{ textAlign: 'center', width: '150px' }}>Thao tác</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {ratePeriods.filter((p) => p.accommodation_id === accommodation.id).length === 0 ? (
-                    <tr>
-                      <td colSpan={6} style={{ textAlign: 'center', padding: '24px', color: '#6B7280' }}>
-                        Chưa có kỳ giá đặc biệt nào được tạo cho cơ sở lưu trú này.
-                      </td>
-                    </tr>
-                  ) : (
-                    ratePeriods
-                      .filter((p) => p.accommodation_id === accommodation.id)
-                      .map((period) => (
-                        <tr key={period.id}>
-                          <td className="code-badge">#{period.id}</td>
-                          <td style={{ fontWeight: 600 }}>{period.name}</td>
-                          <td className="tabular-nums">{formatDateVN(period.start_date)}</td>
-                          <td className="tabular-nums">{formatDateVN(period.end_date)}</td>
-                          <td>
-                            <StatusBadge status={period.status} />
-                          </td>
-                          <td style={{ textAlign: 'center' }}>
-                            <Link
-                              to={`/admin/room-rates?tab=special&accId=${accommodation.id}&periodId=${period.id}`}
-                              className="btn btn-secondary btn-sm"
-                              style={{ fontSize: '11px', padding: '2px 8px' }}
-                            >
-                              Cấu hình giá
-                            </Link>
-                          </td>
-                        </tr>
-                      ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          {/* Section "Kỳ giá đặc biệt (rate_periods)" đã gỡ bỏ: nó lọc trên
+              mock INITIAL_RATE_PERIODS vốn không có field accommodation_id
+              nên bảng luôn rỗng, và các nút bên trong trỏ sang trang mock.
+              Khi module pricing có API thật sẽ dựng lại section này. */}
 
           {/* 7-Day Weekday Rates for Room Types */}
           <div className="admin-card">

@@ -33,8 +33,15 @@ export default function AccommodationListPage() {
     accommodationsLoading,
     accommodationsError,
     accommodationsPagination,
+    currentUser,
     showToast
   } = useAdmin();
+
+  // Role do backend trả qua /auth/loggedin-user (server-side session),
+  // KHÔNG phải state client tự đoán. Backend vẫn là nơi thực thi quyền:
+  // POST/DELETE accommodation đã có requireRole("ADMIN") nên ẩn nút ở đây
+  // chỉ là UX, không phải lớp bảo vệ.
+  const isAdmin = currentUser?.role === 'ADMIN';
 
 
 
@@ -461,16 +468,18 @@ export default function AccommodationListPage() {
           >
             <Star size={13} fill={row.featured ? '#F4C542' : 'none'} />
           </button>
-          <button
-            type="button"
-            className="row-action-btn delete"
-            title="Xóa cơ sở lưu trú"
-            disabled={deletingId === row.id}
-            onClick={() => setDeleteTargetId(row.id)}
-            aria-label={`Xóa ${row.name}`}
-          >
-            <Trash2 size={13} />
-          </button>
+          {isAdmin && (
+            <button
+              type="button"
+              className="row-action-btn delete"
+              title="Xóa cơ sở lưu trú"
+              disabled={deletingId === row.id}
+              onClick={() => setDeleteTargetId(row.id)}
+              aria-label={`Xóa ${row.name}`}
+            >
+              <Trash2 size={13} />
+            </button>
+          )}
         </div>
       )
     }
@@ -485,9 +494,11 @@ export default function AccommodationListPage() {
           { label: 'Cơ sở lưu trú' }
         ]}
         actions={
-          <Link to="/admin/accommodations/create" className="btn btn-primary">
-            <Plus size={15} /> Thêm cơ sở lưu trú
-          </Link>
+          isAdmin ? (
+            <Link to="/admin/accommodations/create" className="btn btn-primary">
+              <Plus size={15} /> Thêm cơ sở lưu trú
+            </Link>
+          ) : null
         }
       />
 
@@ -629,6 +640,18 @@ export default function AccommodationListPage() {
           </button>
         </div>
       </div>
+
+      {/* Lỗi tải list: trước đây accommodationsError không bao giờ được render,
+          nên fetch thất bại (500/mạng) bị hiểu nhầm là "không có dữ liệu".
+          Banner chỉ xuất hiện khi có lỗi; fetchAccommodations tự clear lỗi
+          ở đầu mỗi lần fetch lại (AdminContext). */}
+      {accommodationsError && !accommodationsLoading && (
+        <div className="admin-card" style={{ borderColor: '#E53E3E', marginBottom: '12px' }}>
+          <div className="admin-card-body" style={{ color: '#C53030', fontSize: '13px' }}>
+            {accommodationsError.message || 'Không thể tải danh sách cơ sở lưu trú.'}
+          </div>
+        </div>
+      )}
 
       {/* Chỉ còn MỘT quyết định render: DataTable tự vẽ skeleton khi loading,
           nên không còn hai chữ "Đang tải" chồng nhau và header bảng không mất. */}

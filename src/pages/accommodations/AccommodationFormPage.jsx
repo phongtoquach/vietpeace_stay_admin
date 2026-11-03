@@ -270,6 +270,13 @@ export default function AccommodationFormPage() {
 
   const [errors, setErrors] = useState({});
 
+  // GET detail trả 404 (không tồn tại / ngoài scope) → hiện màn riêng
+  // thay vì render form rỗng cho người dùng bấm Lưu vào ID không có thật.
+  const [isNotFound, setIsNotFound] = useState(false);
+
+  // Chống double-submit: bấm đúp nút Save trước đây gửi 2 request PUT/POST.
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   // Đếm số lượt upload đang chạy. Khi > 0, preview ảnh vẫn là blob: tạm
   // nên phải chặn submit để URL blob không bị ghi xuống DB.
   const [uploadingCount, setUploadingCount] = useState(0);
@@ -381,6 +388,14 @@ export default function AccommodationFormPage() {
             status: error.status,
             errorCode: error.errorCode,
           });
+
+          // 404: bản ghi không tồn tại hoặc ngoài scope — chặn form sớm.
+          if (error.status === 404) {
+            setIsNotFound(true);
+            return;
+          }
+
+          // Lỗi khác (500/network): vẫn cho mở form, hiện banner chung.
           setErrors({ form: error.message });
         }
       }
@@ -645,6 +660,9 @@ export default function AccommodationFormPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
+    // Chặn double-submit: request trước chưa xong thì bỏ qua lần bấm thêm.
+    if (isSubmitting) return;
+
     // Ảnh còn upload thì preview là blob:, chưa có URL backend để lưu.
     if (uploadingCount > 0) {
       setErrors((prev) => ({ ...prev, images: 'Ảnh đang tải lên, vui lòng đợi hoàn tất.' }));
@@ -691,6 +709,8 @@ export default function AccommodationFormPage() {
     console.group("[AccommodationFormPage.handleSubmit]");
     console.log("[1] gửi", isEdit ? "PUT" : "POST", "| trạng thái:", getStatusValue(formData.status));
 
+    setIsSubmitting(true);
+
     try {
       if (isEdit) {
         await accommodationsApi.update(id, payload);
@@ -721,9 +741,40 @@ export default function AccommodationFormPage() {
         setActiveTab('general');
       }
     } finally {
+      setIsSubmitting(false);
       console.groupEnd();
     }
   };
+
+  // GET detail trả 404 → chặn form, hiện màn riêng (cùng pattern RoomTypeFormPage).
+  if (isNotFound) {
+    return (
+      <div className="admin-page">
+        <PageHeader
+          title="Không tìm thấy cơ sở lưu trú"
+          breadcrumb={[
+            { label: 'Cơ sở lưu trú', path: '/admin/accommodations' },
+            { label: 'Lỗi' }
+          ]}
+        />
+        <div className="admin-card" style={{ padding: '40px', textAlign: 'center' }}>
+          <AlertCircle size={36} color="#DC2626" style={{ margin: '0 auto 12px' }} />
+          <h3>Cơ sở lưu trú không tồn tại hoặc đã bị gỡ bỏ.</h3>
+          <p style={{ color: '#6B7280', marginTop: '6px' }}>
+            ID #{id} không có trong dữ liệu bạn được phép quản lý.
+          </p>
+          <button
+            type="button"
+            className="btn btn-primary"
+            style={{ marginTop: '16px' }}
+            onClick={() => navigate('/admin/accommodations')}
+          >
+            Quay lại danh sách cơ sở lưu trú
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -743,12 +794,14 @@ export default function AccommodationFormPage() {
               type="button"
               onClick={handleSubmit}
               className="btn btn-primary"
-              disabled={uploadingCount > 0}
+              disabled={isSubmitting || uploadingCount > 0}
             >
               <Save size={14} />{' '}
               {uploadingCount > 0
                 ? 'Đang tải ảnh...'
-                : isEdit ? 'Lưu thay đổi' : 'Tạo cơ sở lưu trú'}
+                : isSubmitting
+                  ? 'Đang lưu...'
+                  : isEdit ? 'Lưu thay đổi' : 'Tạo cơ sở lưu trú'}
             </button>
           </div>
         }
@@ -1516,11 +1569,13 @@ export default function AccommodationFormPage() {
           <Link to="/admin/accommodations" className="btn btn-secondary">
             Hủy
           </Link>
-          <button type="submit" className="btn btn-primary" disabled={uploadingCount > 0}>
+          <button type="submit" className="btn btn-primary" disabled={isSubmitting || uploadingCount > 0}>
             <Save size={14} />{' '}
             {uploadingCount > 0
               ? 'Đang tải ảnh...'
-              : isEdit ? 'Lưu thay đổi' : 'Tạo cơ sở lưu trú'}
+              : isSubmitting
+                ? 'Đang lưu...'
+                : isEdit ? 'Lưu thay đổi' : 'Tạo cơ sở lưu trú'}
           </button>
         </div>
       </form>

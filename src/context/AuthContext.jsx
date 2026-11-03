@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
+import { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 const AuthContext = createContext();
@@ -26,17 +26,6 @@ export function AuthProvider({ children }) {
 
     // Lưu lỗi khi không thể kiểm tra authentication
     const [authError, setAuthError] = useState(null);
-
-    const refRouteUrl = useRef(currentUrl);
-    console.log("[AuthProvider] Value hiện tại của biến useRef refRouteUrl : " + refRouteUrl.current);
-
-    const isRouteUrlChanged = (currentUrl !== refRouteUrl.current) ? true : false;
-    console.log("[AuthProvider] Value cua bien isRouteUrlChanged : ", isRouteUrlChanged);
-
-    if (isRouteUrlChanged) {
-        console.log("[AuthProvider] Update value hiện tại của biến useRef refRouteUrl thành : " + currentUrl);
-        refRouteUrl.current = currentUrl;
-    }
 
     console.log("[AuthProvider] Value hiện tại của biến useState currentLoggedInUser : ");
     console.log(currentLoggedInUser);
@@ -114,6 +103,10 @@ export function AuthProvider({ children }) {
 
 
     // Gọi checkAuthen() trong useEffect()
+    // Chỉ chạy MỘT LẦN lúc mount: không refetch mỗi lần chuyển trang (trước đây
+    // deps có currentUrl nên mọi navigation đều gọi lại API và lóe "Đang kiểm
+    // tra đăng nhập..."). Session hết hạn giữa chừng vẫn được bắt vì mọi API
+    // của Admin Panel đi qua apiFetch(), nhận 401 là tự redirect về /login.
     useEffect(() => {
         console.log("[AuthProvider] đang chạy useEffect() gọi hàm checkAuthen() !");
 
@@ -126,7 +119,7 @@ export function AuthProvider({ children }) {
             console.log("[AuthProvider] đang chạy hàm cleanup của useEffect() gọi hàm checkAuthen() !");
         };
 
-    }, [currentUrl, checkAuthen]);
+    }, [checkAuthen]);
 
 
     // Hàm logout customer
@@ -185,7 +178,6 @@ export function AuthProvider({ children }) {
             isCheckingAuthen,
             authError,
             currentUrl,
-            isRouteUrlChanged,
             currentPathName: pathname,
             logout
         }}>
