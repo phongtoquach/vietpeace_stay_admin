@@ -14,7 +14,7 @@ export default function AdminLayout({ breadcrumbs = [] }) {
 
 	console.log("[AdminLayout] Vừa vào hàm component AdminLayout !");
 
-    const { currentLoggedInUser, isCheckingAuthen, authError, currentUrl, logout } = useContext(AuthContext);
+    const { currentLoggedInUser, isCheckingAuthen, authError, currentUrl, isRouteUrlChanged, logout } = useContext(AuthContext);
 
     useEffect(() => {
         console.log("[AdminLayout] đang chạy useEffect() của component AdminLayout !");
@@ -26,13 +26,10 @@ export default function AdminLayout({ breadcrumbs = [] }) {
     });
 
     console.log("[AdminLayout] useState AuthProvider.isCheckingAuthen : ", isCheckingAuthen);
-
-    // Chỉ chặn khi đang check auth. Trước đây còn chặn theo isRouteUrlChanged
-    // (biến mutate trong render của AuthContext) — sau khi bỏ refetch auth
-    // mỗi navigation, không còn state update ép re-render sau nhịp đổi URL
-    // nên app kẹt vĩnh viễn ở màn này. Điều kiện đó không bảo vệ gì, đã gỡ.
-    if (isCheckingAuthen === true) {
-        console.log("[AdminLayout] useState AuthProvider.isCheckingAuthen = true ! Return JSX Element thông báo đang check đăng nhập !");
+    console.log("[AdminLayout] biến AuthProvider.isRouteUrlChanged : ", isRouteUrlChanged);
+    
+    if (isCheckingAuthen === true || isRouteUrlChanged === true) {
+        console.log("[AdminLayout] useState AuthProvider.isCheckingAuthen = true HOẶC AuthProvider.isRouteUrlChanged = true ! Return JSX Element thông báo đang check đăng nhập !");
         return (
             <div>
                 <p>Đang kiểm tra đăng nhập...</p>
