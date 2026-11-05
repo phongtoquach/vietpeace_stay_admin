@@ -7,7 +7,7 @@ import ConfirmDialog from '../../components/common/ConfirmDialog.jsx';
 import FormInput from '../../components/forms/FormInput.jsx';
 import FormSelect from '../../components/forms/FormSelect.jsx';
 import FormTextarea from '../../components/forms/FormTextarea.jsx';
-import { Plus, Edit2, Trash2, Sparkles, X, Save, Search, RotateCcw } from 'lucide-react';
+import { Plus, Edit2, Trash2, Sparkles, X, Save, Search, RotateCcw, Star } from 'lucide-react';
 
 export default function AmenitiesPage() {
   const { showToast } = useAdmin();
@@ -297,6 +297,48 @@ const handleToggleStatus = async (item) => {
     await toggleAmenityStatus(item.id, nextStatus);
 };
 
+const handleToggleFeatured = async (item) => {
+    const nextFeatured = !item.is_featured;
+
+    try {
+        const response = await apiFetch(`/amenities/${item.id}/featured`, {
+            method: 'PATCH',
+            body: JSON.stringify({
+                is_featured: nextFeatured
+            })
+        });
+
+        if (!response?.success) {
+            throw new Error(
+                response?.message || 'Không thể cập nhật tiện nghi nổi bật.'
+            );
+        }
+
+        const listResponse = await apiFetch('/amenities');
+        const amenitiesList = listResponse?.data?.amenitiesList || [];
+
+        setAmenities(
+            amenitiesList.map((item) => ({
+                ...item,
+                category: item.category_code,
+                icon: item.icon_key || 'Sparkles',
+                status: item.is_active ? 'Active' : 'Inactive',
+                usage_count: Number(item.usage_count) || 0
+            }))
+        );
+
+        showToast(
+            nextFeatured
+                ? 'Đã đánh dấu tiện nghi nổi bật.'
+                : 'Đã bỏ đánh dấu tiện nghi nổi bật.',
+            'success'
+        );
+    } catch (error) {
+        console.error('Toggle featured error:', error);
+        showToast(error.message || 'Không thể cập nhật tiện nghi nổi bật.', 'error');
+    }
+};
+
 
   const filteredAmenities = useMemo(() => {
     return amenities.filter((item) => {
@@ -322,8 +364,11 @@ const handleToggleStatus = async (item) => {
             item.amenity_scope === 'both';
 
         return matchSearch && matchCat && matchScope;
-    });
+    })
+    // Sắp xếp ID từ lớn đến bé
+        .sort((a, b) => Number(b.id) - Number(a.id));
 }, [amenities, searchTerm, categoryFilter, scopeFilter]);
+
 
   return (
     <div>
@@ -402,30 +447,30 @@ const handleToggleStatus = async (item) => {
       {/* Table */}
       <div className="table-responsive">
         <table
-            className="data-table"
+            className="data-table amenities-table"
             style={{
                 width: '100%',
                 tableLayout: 'fixed'
             }}
         >
             <colgroup>
-                <col style={{ width: '5%' }} />
-                <col style={{ width: '18%' }} />
+                <col style={{ width: '19%' }} />
                 <col style={{ width: '17%' }} />
-                <col style={{ width: '14%' }} />
-                <col style={{ width: '20%' }} />
-                <col style={{ width: '14%' }} />
-                <col style={{ width: '12%' }} />
+                <col style={{ width: '15%' }} />
+                <col style={{ width: '22%' }} />
+                <col style={{ width: '11%' }} />
+                <col style={{ width: '16%' }} />
             </colgroup>
 
             <thead>
               <tr>
-                <th>ID</th>
                 <th>Tên tiện nghi</th>
                 <th>Nhóm tiện nghi</th>
                 <th>Phạm vi áp dụng</th>
-                <th style={{ textAlign: 'center' }}>
-                    Mô tả chi tiết
+                <th>
+                    <div className="amenity-description-content">
+                        Mô tả chi tiết
+                    </div>
                 </th>
                 <th>Trạng thái</th>
                 <th style={{ textAlign: 'center' }}>Thao tác</th>
@@ -434,7 +479,7 @@ const handleToggleStatus = async (item) => {
           <tbody>
             {filteredAmenities.length === 0 ? (
               <tr>
-                <td colSpan={7} style={{ textAlign: 'center', padding: '30px' }}>
+                <td colSpan={6} style={{ textAlign: 'center', padding: '30px' }}>
                   Không tìm thấy tiện nghi nào phù hợp với bộ lọc tìm kiếm.
                 </td>
               </tr>
@@ -442,9 +487,6 @@ const handleToggleStatus = async (item) => {
             filteredAmenities.map((item) => (
                 <tr key={item.id}>
                     {/* ID */}
-                    <td className="code-badge">
-                        #{item.id}
-                    </td>
 
                     {/* Tên tiện nghi */}
                     <td style={{ fontWeight: 600, color: '#292D32' }}>
@@ -472,12 +514,10 @@ const handleToggleStatus = async (item) => {
                     </td>
 
                     {/* Mô tả chi tiết */}
-                    <td style={{
-                        color: '#4B5563',
-                        fontSize: '12.5px',
-                        textAlign: 'center'
-                    }}>
-                        {item.description || ''}
+                    <td>
+                        <div className="amenity-description-content">
+                            {item.description || ''}
+                        </div>
                     </td>
 
                     {/* Trạng thái */}
@@ -497,6 +537,23 @@ const handleToggleStatus = async (item) => {
                                 onClick={() => handleOpenEdit(item)}
                             >
                                 <Edit2 size={13} />
+                            </button>
+
+                            {/* Nút đánh dấu nổi bật */}
+                            <button
+                                type="button"
+                                className={`row-action-btn amenity-featured-btn ${
+                                    item.is_featured ? 'is-featured' : ''
+                                }`}
+                                title={item.is_featured ? 'Bỏ đánh dấu nổi bật' : 'Đánh dấu nổi bật'}
+                                onClick={() => handleToggleFeatured(item)}
+                                aria-label={item.is_featured ? 'Bỏ đánh dấu nổi bật' : 'Đánh dấu nổi bật'}
+                                aria-pressed={Boolean(item.is_featured)}
+                            >
+                                <Star
+                                    size={14}
+                                    fill={item.is_featured ? 'currentColor' : 'none'}
+                                />
                             </button>
 
                             {/* Nút ON/OFF */}

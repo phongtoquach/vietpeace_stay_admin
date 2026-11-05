@@ -658,7 +658,8 @@
     padding: 2px;
     border: none;
     border-radius: 30px;
-    background: #CFD8DC;
+    background: #FFFFFF;
+    border: 1px solid #D5DDE3;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
@@ -709,4 +710,58 @@
 .amenity-toggle:focus-visible {
     outline: 2px solid #2563EB;
     outline-offset: 2px;
+}
+
+/* Cột mô tả chi tiết */
+.amenities-table th:nth-child(4),
+.amenities-table td:nth-child(4) {
+    text-align: center;
+    line-height: 1.5;
+    overflow-wrap: break-word;
+}
+
+/* Chỉ dịch chuyển nội dung mô tả sang trái */
+.amenity-description-content {
+    position: relative;
+    left: -45px;
+    width: 100%;
+    text-align: center;
+    color: #4B5563;
+}
+
+/* Tạo khoảng cách cho cột Tên tiện nghi */
+.amenities-table th:first-child,
+.amenities-table td:first-child {
+    padding-left: 32px;
+}
+
+/* Nút đánh dấu tiện nghi nổi bật */
+.amenity-featured-btn {
+    margin-left: 6px;
+    color: #64748B;
+    transition: all 0.2s ease;
+}
+
+.amenity-featured-btn:hover {
+    color: #EAB308;
+    background: #FEF9C3;
+}
+
+.amenity-featured-btn.is-featured {
+    color: #EAB308;
+    background: #FEF9C3;
+    border-color: #FDE68A;
+}
+
+/* Căn giữa tiêu đề và nội dung cột Trạng thái */
+.amenities-table th:nth-child(5),
+.amenities-table td:nth-child(5) {
+    text-align: center !important;
+    vertical-align: middle;
+}
+
+/* Căn giữa nhãn trạng thái */
+.amenities-table td:nth-child(5) > * {
+    margin-left: auto;
+    margin-right: auto;
 }
