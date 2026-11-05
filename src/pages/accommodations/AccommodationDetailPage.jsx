@@ -642,10 +642,32 @@ export default function AccommodationDetailPage() {
                       borderRadius: '4px'
                     }}
                   >
-                    <CheckCircle size={15} color="#287A4B" />
+                    <CheckCircle size={15} color="#287A4B" style={{ marginTop: '2px', flexShrink: 0 }} />
                     <div>
-                      <div style={{ fontSize: '13px', fontWeight: 600, color: '#292D32' }}>{am.name}</div>
+                      <div style={{ fontSize: '13px', fontWeight: 600, color: '#292D32' }}>
+                        {am.name}
+                        {am.isChargeable && (
+                          <span
+                            style={{
+                              marginLeft: '6px',
+                              fontSize: '10.5px',
+                              fontWeight: 600,
+                              color: '#B45309',
+                              backgroundColor: '#FEF3C7',
+                              padding: '1px 6px',
+                              borderRadius: '999px'
+                            }}
+                          >
+                            Có thu phí
+                          </span>
+                        )}
+                      </div>
                       <div style={{ fontSize: '11px', color: '#6B7280' }}>{am.category}</div>
+                      {am.note && (
+                        <div style={{ fontSize: '11px', color: '#4B5563', marginTop: '3px' }}>
+                          {am.note}
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}

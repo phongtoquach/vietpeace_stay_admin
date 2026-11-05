@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import PageHeader from '../../components/common/PageHeader.jsx';
 import FormInput from '../../components/forms/FormInput.jsx';
@@ -195,10 +195,12 @@ function toApiCreatePayload(formData) {
       isCover: imageUrl === coverImageUrl,
     })),
 
-    // Backend đọc key "amenities" dạng [{ amenityId }] (spec 5.2).
+    // Backend đọc key "amenities" dạng [{ amenityId, isChargeable, note }] (spec 5.2).
     // Nếu gửi "amenityIds" thì service bỏ qua im lặng → tiện nghi không được ghi.
-    amenities: (formData.amenity_ids || []).map((amenityId) => ({
-      amenityId: Number(amenityId),
+    amenities: (formData.amenities || []).map((item) => ({
+      amenityId: Number(item.amenityId),
+      isChargeable: Boolean(item.isChargeable),
+      note: String(item.note || '').trim() || null,
     })),
 
     // Backend nhận distanceMeters, không nhận distance + distance_unit
@@ -221,8 +223,10 @@ function toApiRelatedPayload(formData) {
       isCover: imageUrl === coverImageUrl,
     })),
     // Cùng shape với create để backend replaceAmenities xử lý được.
-    amenities: (formData.amenity_ids || []).map((amenityId) => ({
-      amenityId: Number(amenityId),
+    amenities: (formData.amenities || []).map((item) => ({
+      amenityId: Number(item.amenityId),
+      isChargeable: Boolean(item.isChargeable),
+      note: String(item.note || '').trim() || null,
     })),
     attractions: (formData.attractions || []).map((item) => ({
       attractionId: Number(item.attraction_id),
@@ -264,9 +268,15 @@ export default function AccommodationFormPage() {
     featured: false,
     cover_image: '',
     gallery_images: [],
-    amenity_ids: [],
+    // Mỗi tiện nghi được chọn giữ thêm ghi chú và cờ thu phí của
+    // bảng accommodation_amenities (không phải thuộc tính chung của amenities).
+    amenities: [],
     attractions: []
   });
+
+  // Giữ note/chargeable của tiện nghi vừa bỏ chọn trong phiên làm việc,
+  // để tick lại không phải nhập lại từ đầu.
+  const amenityDraftCache = useRef({});
 
   const [errors, setErrors] = useState({});
 
@@ -368,9 +378,11 @@ export default function AccommodationFormPage() {
           gallery_images: images
             .filter((image) => !image.isCover)
             .map((image) => buildImageUrl(image.imageUrl)),
-          amenity_ids: (detail.amenities || []).map(
-            (amenity) => amenity.amenityId || amenity.id,
-          ),
+          amenities: (detail.amenities || []).map((amenity) => ({
+            amenityId: Number(amenity.amenityId ?? amenity.id),
+            note: amenity.note || '',
+            isChargeable: Boolean(amenity.isChargeable),
+          })),
           attractions: (detail.attractions || []).map((attraction) => ({
             attraction_id: attraction.attractionId,
             distance_meters: attraction.distanceMeters || 0,
@@ -648,13 +660,55 @@ export default function AccommodationFormPage() {
   };
 
   const handleAmenityToggle = (amenityId) => {
+    const idNum = Number(amenityId);
+
     setFormData((prev) => {
-      const current = prev.amenity_ids || [];
-      const updated = current.includes(amenityId)
-        ? current.filter((id) => id !== amenityId)
-        : [...current, amenityId];
-      return { ...prev, amenity_ids: updated };
+      const current = prev.amenities || [];
+      const existing = current.find(
+        (item) => Number(item.amenityId) === idNum,
+      );
+
+      if (existing) {
+        // Lưu nháp trước khi bỏ chọn để tick lại vẫn còn note đã nhập.
+        amenityDraftCache.current[idNum] = {
+          note: existing.note || '',
+          isChargeable: Boolean(existing.isChargeable),
+        };
+        return {
+          ...prev,
+          amenities: current.filter(
+            (item) => Number(item.amenityId) !== idNum,
+          ),
+        };
+      }
+
+      const draft = amenityDraftCache.current[idNum] || {
+        note: '',
+        isChargeable: false,
+      };
+      return {
+        ...prev,
+        amenities: [...current, { amenityId: idNum, ...draft }],
+      };
     });
+
+    if (errors.amenities) {
+      setErrors((prev) => ({ ...prev, amenities: null }));
+    }
+  };
+
+  const handleAmenityFieldChange = (amenityId, field, value) => {
+    const idNum = Number(amenityId);
+    setFormData((prev) => ({
+      ...prev,
+      amenities: (prev.amenities || []).map((item) =>
+        Number(item.amenityId) === idNum ? { ...item, [field]: value } : item,
+      ),
+    }));
+
+    if (errors.amenities) {
+      setErrors((prev) => ({ ...prev, amenities: null }));
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -679,6 +733,12 @@ export default function AccommodationFormPage() {
     }
     if (!isEdit && !String(formData.short_description || '').trim()) {
       clientErrors.short_description = 'Vui lòng nhập mô tả tóm tắt.';
+    }
+    const hasTooLongAmenityNote = (formData.amenities || []).some(
+      (item) => String(item.note || '').length > 1000,
+    );
+    if (hasTooLongAmenityNote) {
+      clientErrors.amenities = 'Ghi chú tiện nghi tối đa 1000 ký tự.';
     }
     if (Object.keys(clientErrors).length > 0) {
       setErrors((prev) => ({ ...prev, ...clientErrors }));
@@ -828,7 +888,7 @@ export default function AccommodationFormPage() {
           className={`admin-tab ${activeTab === 'amenities' ? 'active' : ''}`}
           onClick={() => setActiveTab('amenities')}
         >
-          Tiện nghi ({formData.amenity_ids?.length || 0})
+          Tiện nghi ({formData.amenities?.length || 0})
         </button>
         <button
           type="button"
@@ -1487,7 +1547,7 @@ export default function AccommodationFormPage() {
             <div className="admin-card-header">
               <div className="admin-card-title">Tiện nghi & Dịch vụ cơ sở lưu trú</div>
               <span style={{ fontSize: '12px', color: '#6B7280' }}>
-                Đã chọn {formData.amenity_ids.length} tiện nghi
+                Đã chọn {(formData.amenities || []).length} tiện nghi
               </span>
             </div>
             <div className="admin-card-body">
@@ -1502,25 +1562,66 @@ export default function AccommodationFormPage() {
                     </h3>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '8px' }}>
                       {items.map((amenity) => {
-                        const isChecked = formData.amenity_ids.includes(amenity.id);
+                        const entry = (formData.amenities || []).find(
+                          (item) => Number(item.amenityId) === Number(amenity.id),
+                        );
+                        const isChecked = Boolean(entry);
                         return (
-                          <label
+                          <div
                             key={amenity.id}
-                            className="form-checkbox-label"
                             style={{
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '4px',
                               padding: '6px 10px',
                               backgroundColor: isChecked ? '#FEFBE8' : '#F9FAFB',
                               border: isChecked ? '1px solid #F4C542' : '1px solid #E5E7EB',
                               borderRadius: '4px'
                             }}
                           >
-                            <input
-                              type="checkbox"
-                              checked={isChecked}
-                              onChange={() => handleAmenityToggle(amenity.id)}
-                            />
-                            <span style={{ fontSize: '12.5px' }}>{amenity.name}</span>
-                          </label>
+                            <label className="form-checkbox-label" style={{ padding: 0 }}>
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => handleAmenityToggle(amenity.id)}
+                              />
+                              <span style={{ fontSize: '12.5px' }}>{amenity.name}</span>
+                            </label>
+
+                            {isChecked && (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', paddingLeft: '20px' }}>
+                                <input
+                                  type="text"
+                                  className="form-input"
+                                  style={{ fontSize: '12px', padding: '5px 8px' }}
+                                  placeholder="Ghi chú (VD: Mở cửa 06:30–22:00)"
+                                  value={entry.note || ''}
+                                  maxLength={1000}
+                                  onChange={(e) =>
+                                    handleAmenityFieldChange(amenity.id, 'note', e.target.value)
+                                  }
+                                  onKeyDown={(e) => {
+                                    // Tránh Enter trong ô ghi chú kích hoạt submit cả form.
+                                    if (e.key === 'Enter') e.preventDefault();
+                                  }}
+                                />
+                                <label className="form-checkbox-label" style={{ fontSize: '11.5px', color: '#4B5563' }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={Boolean(entry.isChargeable)}
+                                    onChange={(e) =>
+                                      handleAmenityFieldChange(
+                                        amenity.id,
+                                        'isChargeable',
+                                        e.target.checked,
+                                      )
+                                    }
+                                  />
+                                  <span>Có thu phí</span>
+                                </label>
+                              </div>
+                            )}
+                          </div>
                         );
                       })}
                     </div>
