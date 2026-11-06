@@ -590,7 +590,7 @@ export default function ManagersListPage() {
                     lineHeight: 1.5,
                   }}
                 >
-                  Thêm hồ sơ Manager vào danh sách. Khi bạn thực hiện <strong>Phân công quản lý cơ sở</strong>, tên và Gmail của Manager này sẽ xuất hiện trong danh sách chọn để hệ thống tự động cấp tài khoản & gửi mật khẩu.
+                  Thêm hồ sơ Manager vào danh sách. Khi bạn thực hiện <strong>Phân công quản lý cơ sở</strong>, tên và email của Manager này sẽ xuất hiện trong danh sách chọn để hệ thống tự động cấp tài khoản & gửi mật khẩu.
                 </div>
 
                 <div style={{ marginBottom: '14px' }}>
@@ -610,7 +610,7 @@ export default function ManagersListPage() {
 
                 <div style={{ marginBottom: '14px' }}>
                   <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, marginBottom: '6px' }}>
-                    Địa chỉ Email cá nhân (Gmail): <span style={{ color: '#DC2626' }}>*</span>
+                    Địa chỉ Email cá nhân: <span style={{ color: '#DC2626' }}>*</span>
                   </label>
                   <input
                     type="email"
@@ -713,7 +713,7 @@ export default function ManagersListPage() {
 
                 <div style={{ marginBottom: '14px' }}>
                   <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, marginBottom: '6px' }}>
-                    Địa chỉ Email cá nhân (Gmail): <span style={{ color: '#DC2626' }}>*</span>
+                    Địa chỉ Email cá nhân: <span style={{ color: '#DC2626' }}>*</span>
                   </label>
                   <input
                     type="email"

@@ -301,7 +301,7 @@ export default function RolesPermissionsPage() {
       (a.manager?.internalEmail && a.manager.internalEmail.toLowerCase().includes(q)) ||
       (a.manager?.personalEmail && a.manager.personalEmail.toLowerCase().includes(q))
     );
-  });
+  }).sort((a, b) => Number(Boolean(a.manager)) - Number(Boolean(b.manager)));
 
   return (
     <div>
@@ -831,7 +831,7 @@ export default function RolesPermissionsPage() {
                         color: 'var(--color-primary-text, #292D32)',
                       }}
                     >
-                      Địa chỉ Gmail cá nhân (của Google): <span style={{ color: '#DC2626' }}>*</span>
+                      Địa chỉ email cá nhân: <span style={{ color: '#DC2626' }}>*</span>
                     </label>
                     <input
                       type="email"
@@ -854,9 +854,6 @@ export default function RolesPermissionsPage() {
                         boxSizing: 'border-box',
                       }}
                     />
-                    <small style={{ color: 'var(--color-secondary-text, #6B7280)', fontSize: '12px', display: 'block', marginTop: '5px' }}>
-                      Hệ thống sẽ tự động gửi tài khoản nội bộ & mật khẩu tạm thời vào Gmail của Manager đã chọn.
-                    </small>
                   </div>
 
                   <div style={{ marginBottom: '8px' }}>
