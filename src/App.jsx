@@ -1,7 +1,7 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 
-import { AuthProvider } from './context/AuthContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { AdminProvider } from './context/AdminContext.jsx';
 
 import AdminLayout from './components/layouts/AdminLayout.jsx';
@@ -52,6 +52,7 @@ import CustomerDetailPage from './pages/customers/CustomerDetailPage.jsx';
 // Admin Users & Roles
 import AdminUsersPage from './pages/users/AdminUsersPage.jsx';
 import RolesPermissionsPage from './pages/users/RolesPermissionsPage.jsx';
+import ManagersListPage from './pages/users/ManagersListPage.jsx';
 
 // Reports
 import RevenueReportPage from './pages/reports/RevenueReportPage.jsx';
@@ -61,6 +62,14 @@ import OccupancyReportPage from './pages/reports/OccupancyReportPage.jsx';
 // Settings
 import GeneralSettingsPage from './pages/settings/GeneralSettingsPage.jsx';
 import WebsiteSettingsPage from './pages/settings/WebsiteSettingsPage.jsx';
+
+function AdminOnlyRoute({ children }) {
+	const { currentLoggedInUser } = useAuth();
+	if (currentLoggedInUser && currentLoggedInUser.role !== 'ADMIN') {
+		return <Navigate to="/admin/dashboard" replace />;
+	}
+	return children;
+}
 
 export default function App() {
 	return (
@@ -118,18 +127,19 @@ export default function App() {
 						<Route path="customers" element={<CustomerListPage />} />
 						<Route path="customers/:id" element={<CustomerDetailPage />} />
 
-						{/* Users & Roles */}
-						<Route path="users" element={<AdminUsersPage />} />
-						<Route path="roles" element={<RolesPermissionsPage />} />
+						{/* Users & Roles (Chỉ Super Admin) */}
+						<Route path="users" element={<AdminOnlyRoute><AdminUsersPage /></AdminOnlyRoute>} />
+						<Route path="roles" element={<AdminOnlyRoute><RolesPermissionsPage /></AdminOnlyRoute>} />
+						<Route path="managers" element={<AdminOnlyRoute><ManagersListPage /></AdminOnlyRoute>} />
 
 						{/* Reports */}
 						<Route path="reports/revenue" element={<RevenueReportPage />} />
 						<Route path="reports/bookings" element={<BookingReportPage />} />
 						<Route path="reports/occupancy" element={<OccupancyReportPage />} />
 
-						{/* Settings */}
-						<Route path="settings/general" element={<GeneralSettingsPage />} />
-						<Route path="settings/website" element={<WebsiteSettingsPage />} />
+						{/* Settings (Chỉ Super Admin) */}
+						<Route path="settings/general" element={<AdminOnlyRoute><GeneralSettingsPage /></AdminOnlyRoute>} />
+						<Route path="settings/website" element={<AdminOnlyRoute><WebsiteSettingsPage /></AdminOnlyRoute>} />
 					</Route>
 
 					{/* Fallback route */}

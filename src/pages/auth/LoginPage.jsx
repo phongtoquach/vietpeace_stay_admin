@@ -1,5 +1,5 @@
-import React, { useContext, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import React, { useContext, useState, useEffect } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 
 import AuthContext from '../../context/AuthContext';
 import { useAdmin } from '../../context/AdminContext.jsx';
@@ -7,7 +7,7 @@ import { useAdmin } from '../../context/AdminContext.jsx';
 import { Hotel, Eye, EyeOff } from 'lucide-react';
 
 export default function LoginPage() {
-	//const { setCurrentLoggedInUser } = useContext(AuthContext);
+	const { setCurrentLoggedInUser } = useContext(AuthContext);
 
 	const [email, setEmail] = useState('');
 	const [password, setPassword] = useState('');
@@ -15,6 +15,14 @@ export default function LoginPage() {
 	const [rememberMe, setRememberMe] = useState(true);
 	const { login } = useAdmin();
 	const navigate = useNavigate();
+	const [searchParams] = useSearchParams();
+
+	useEffect(() => {
+		const emailParam = searchParams.get('email');
+		if (emailParam) {
+			setFormData((prev) => ({ ...prev, email: emailParam.trim() }));
+		}
+	}, [searchParams]);
 
 	console.log("[LoginPage] Day là ngay trước dòng khai báo biến useState formData !");
     const [formData, setFormData] = useState({
@@ -146,7 +154,7 @@ export default function LoginPage() {
 		}
 
 		console.log("[LoginPage - handleSubmit] response_data.success = true ! Chuyen den route /admin/dashboard !");
-		//setCurrentLoggedInUser(response_data.data.loginUserData);
+		setCurrentLoggedInUser(response_data.data.loginUserData);
 
 		navigate('/admin/dashboard');
 	};

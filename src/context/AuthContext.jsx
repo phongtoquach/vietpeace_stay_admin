@@ -147,6 +147,7 @@ export function AuthProvider({ children }) {
                 // status code 401 xác nhận session đăng nhập của user không tồn tại
                 if (api_response.status === 401) {
                     console.log("[AuthProvider - logout] status code cua response cua API /auth/logout la 401 ! chuyển qua route trang Login !");
+                    setCurrentLoggedInUser(null);
                     navigate("/login");
                     return false;
                 }
@@ -158,6 +159,7 @@ export function AuthProvider({ children }) {
             const response_data = await api_response.json();
             console.log("[AuthProvider - logout] Logout thanh cong ! Chuyen den route /login ! Data của response_data : ", response_data);
 
+            setCurrentLoggedInUser(null);
             navigate("/login");
             
             // console.log("[AuthProvider - logout] current_url : " + current_url);
@@ -178,6 +180,13 @@ export function AuthProvider({ children }) {
 
     
 
+    // Kiểm tra nhanh quyền hạn theo mã quyền (Dynamic RBAC)
+    const hasPermission = useCallback((permissionKey) => {
+        if (!currentLoggedInUser) return false;
+        if (currentLoggedInUser.role === 'ADMIN') return true; // Super Admin luôn có toàn quyền
+        return Boolean(currentLoggedInUser.permissions && currentLoggedInUser.permissions.includes(permissionKey));
+    }, [currentLoggedInUser]);
+
     return (
         <AuthContext.Provider value={{
             currentLoggedInUser,
@@ -187,7 +196,8 @@ export function AuthProvider({ children }) {
             currentUrl,
             isRouteUrlChanged,
             currentPathName: pathname,
-            logout
+            logout,
+            hasPermission
         }}>
             {children}
         </AuthContext.Provider>

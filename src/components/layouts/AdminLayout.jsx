@@ -8,6 +8,7 @@ import { useAdmin } from '../../context/AdminContext.jsx';
 import Sidebar from './Sidebar.jsx';
 import Header from './Header.jsx';
 import NotificationToast from '../common/NotificationToast.jsx';
+import ForcePasswordChangeModal from '../common/ForcePasswordChangeModal.jsx';
 
 export default function AdminLayout({ breadcrumbs = [] }) {
 	const { isMobileSidebarOpen, setIsMobileSidebarOpen } = useAdmin();
@@ -86,6 +87,9 @@ export default function AdminLayout({ breadcrumbs = [] }) {
 				</main>
 				<NotificationToast />
 			</div>
+
+			{/* Modal bắt buộc đổi mật khẩu tạm ở lần đăng nhập đầu tiên */}
+			<ForcePasswordChangeModal />
 		</div>
 	);
 }
