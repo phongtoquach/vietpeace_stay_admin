@@ -38,7 +38,15 @@ const getProvinceOfLocation = (locationId, locations = []) => {
 function getStatusValue(status) {
   if (typeof status === 'number') return status;
 
-  const normalized = String(status || '').toLowerCase();
+  const normalized = String(status ?? '').trim().toLowerCase();
+
+  // Select trả e.target.value luôn là chuỗi ("0"/"1"/"2"), nên phải đổi sang
+  // số trước khi tra nhãn. Không vậy mọi lựa chọn đều rơi vào fallback 0
+  // và bị lưu thành Bản nháp dù admin chọn Ngừng hoạt động hay Đang hoạt động.
+  if (normalized !== '' && Number.isInteger(Number(normalized))) {
+    return Number(normalized);
+  }
+
   if (normalized === 'bản nháp' || normalized === 'draft') return 0;
   if (normalized === 'đang hoạt động' || normalized === 'active') return 1;
   if (normalized === 'ngừng hoạt động' || normalized === 'inactive') return 2;
@@ -373,6 +381,9 @@ export default function AccommodationFormPage() {
           checkout_time: detail.checkOutTime || '12:00',
           star_rating: detail.starRating ?? '',
           status: detail.status ?? 0,
+          // R7: backend trả cờ "đã có Manager đang hoạt động" để khóa
+          // lựa chọn trạng thái ACTIVE khi chưa gán Manager.
+          hasManager: Boolean(detail.hasManager),
           featured: Boolean(detail.isFeatured),
           cover_image: buildImageUrl(detail.coverImageUrl) || '',
           gallery_images: images
@@ -976,10 +987,21 @@ export default function AccommodationFormPage() {
                       onChange={handleChange}
                       options={[
                         { value: 0, label: 'Bản nháp' },
-                        { value: 1, label: 'Đang hoạt động (Mở nhận đặt phòng)' },
+                        // R7: chưa có Manager đang hoạt động thì ẩn hẳn lựa chọn
+                        // ACTIVE thay vì hiện rồi làm mờ. Riêng cơ sở đang là
+                        // ACTIVE (dữ liệu cũ) vẫn giữ để select hiển thị đúng
+                        // trạng thái hiện có.
+                        ...(formData.hasManager || Number(formData.status) === 1
+                          ? [{ value: 1, label: 'Đang hoạt động (Mở nhận đặt phòng)' }]
+                          : []),
                         { value: 2, label: 'Ngừng hoạt động (Tạm đóng bảo trì)' }
                       ]}
                       error={errors.status}
+                      helperText={
+                        !formData.hasManager
+                          ? 'Cơ sở chưa có Manager đang hoạt động: chỉ được chuyển qua lại Bản nháp và Ngừng hoạt động.'
+                          : undefined
+                      }
                     />
                   )}
 

@@ -513,6 +513,78 @@ export default function AccommodationDetailPage() {
               </div>
             </div>
 
+            {/* Người quản lý đang được gán (accommodation_managers + users).
+                DTO detail trả manager = null khi chưa gán; hasManager chỉ
+                đúng khi tài khoản manager còn hoạt động (R7). */}
+            <div style={{ borderTop: '1px solid #F3F4F6', paddingTop: '16px', marginBottom: '20px' }}>
+              <h3 style={{ fontSize: '13.5px', fontWeight: 700, color: '#292D32', marginBottom: '10px' }}>
+                Người quản lý đang phụ trách
+              </h3>
+              {accommodation.manager ? (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
+                  <div>
+                    <span style={{ fontSize: '11.5px', color: '#6B7280', textTransform: 'uppercase', fontWeight: 600 }}>
+                      Họ tên Manager
+                    </span>
+                    <div style={{ fontSize: '14px', fontWeight: 500, color: '#292D32', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                      {accommodation.manager.fullName || '—'}
+                      {!accommodation.manager.isActive && (
+                        <span className="badge badge-warning" style={{ fontSize: '10.5px' }}>
+                          Tài khoản tạm khóa
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div>
+                    <span style={{ fontSize: '11.5px', color: '#6B7280', textTransform: 'uppercase', fontWeight: 600 }}>
+                      Email hệ thống
+                    </span>
+                    <div style={{ fontSize: '14px', color: '#292D32' }}>
+                      {accommodation.manager.internalEmail || '—'}
+                    </div>
+                  </div>
+                  <div>
+                    <span style={{ fontSize: '11.5px', color: '#6B7280', textTransform: 'uppercase', fontWeight: 600 }}>
+                      Email cá nhân
+                    </span>
+                    <div style={{ fontSize: '14px', color: '#292D32' }}>
+                      {accommodation.manager.personalEmail || '—'}
+                    </div>
+                  </div>
+                  <div>
+                    <span style={{ fontSize: '11.5px', color: '#6B7280', textTransform: 'uppercase', fontWeight: 600 }}>
+                      Điện thoại
+                    </span>
+                    <div style={{ fontSize: '14px', color: '#292D32' }}>
+                      {accommodation.manager.phoneNumber || '—'}
+                    </div>
+                  </div>
+                  <div>
+                    <span style={{ fontSize: '11.5px', color: '#6B7280', textTransform: 'uppercase', fontWeight: 600 }}>
+                      Nhận bàn giao ngày
+                    </span>
+                    <div style={{ fontSize: '14px', color: '#292D32' }} className="tabular-nums">
+                      {accommodation.manager.assignedAt || '—'}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ fontSize: '13px', color: '#6B7280' }}>
+                  Cơ sở chưa có người quản lý được gán.
+                  {isAdmin && (
+                    <>
+                      {' '}Gán Manager tại{' '}
+                      <Link to="/admin/roles" style={{ color: '#8C5A00', textDecoration: 'underline' }}>
+                        Phân quyền &amp; Quản lý
+                      </Link>
+                      . Cơ sở chưa có Manager đang hoạt động không thể chuyển sang
+                      trạng thái Đang hoạt động.
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+
             <div style={{ borderTop: '1px solid #F3F4F6', paddingTop: '16px' }}>
               <h3 style={{ fontSize: '13.5px', fontWeight: 700, color: '#292D32', marginBottom: '6px' }}>
                 Mô tả chi tiết cơ sở lưu trú
