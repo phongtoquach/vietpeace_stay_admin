@@ -1,3 +1,4 @@
+import ValidatedForm, { FieldError } from "../../components/forms/ValidatedForm";
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import PageHeader from '../../components/common/PageHeader.jsx';
@@ -7,34 +8,20 @@ import FormTextarea from '../../components/forms/FormTextarea.jsx';
 import ImageUpload from '../../components/forms/ImageUpload.jsx';
 import { lookupsApi } from '../../api/lookups.js';
 import { accommodationsApi, buildImageUrl } from '../../api/accommodations.js';
-import {
-  ArrowLeft,
-  Save,
-  Building,
-  MapPin,
-  Sparkles,
-  Image as ImageIcon,
-  Landmark,
-  Plus,
-  Trash2,
-  AlertCircle,
-  CheckCircle2,
-  Phone,
-  Mail,
-  Globe,
-  Info
-} from 'lucide-react';
+import { ArrowLeft, Save, Building, MapPin, Sparkles, Image as ImageIcon, Landmark, Plus, Trash2, AlertCircle, CheckCircle2, Phone, Mail, Globe, Info } from 'lucide-react';
 import resortDanangImg from '../../assets/images/resort_danang_1790825961463.jpg';
 
 // API /lookup/locations đã trả sẵn provinceId + provinceName cho từng điểm đến,
 // nên chỉ cần tra trực tiếp thay vì dò cây cha–con như dữ liệu mock trước đây.
 const getProvinceOfLocation = (locationId, locations = []) => {
   if (!locationId || !locations.length) return null;
-  const loc = locations.find((l) => Number(l.id) === Number(locationId));
+  const loc = locations.find(l => Number(l.id) === Number(locationId));
   if (!loc || !loc.provinceId) return null;
-  return { id: Number(loc.provinceId), name: loc.provinceName };
+  return {
+    id: Number(loc.provinceId),
+    name: loc.provinceName
+  };
 };
-
 function getStatusValue(status) {
   if (typeof status === 'number') return status;
 
@@ -50,7 +37,6 @@ function getStatusValue(status) {
   if (normalized === 'bản nháp' || normalized === 'draft') return 0;
   if (normalized === 'đang hoạt động' || normalized === 'active') return 1;
   if (normalized === 'ngừng hoạt động' || normalized === 'inactive') return 2;
-
   return 0;
 }
 
@@ -76,7 +62,7 @@ const API_ERROR_KEY_MAP = {
   status: 'status',
   images: 'images',
   amenities: 'amenities',
-  attractions: 'attractions',
+  attractions: 'attractions'
 };
 
 // Field nào thuộc tab nào, dùng để mở đúng tab khi backend báo lỗi.
@@ -100,7 +86,7 @@ const FIELD_TAB_MAP = {
   longitude: 'location',
   attractions: 'location',
   amenities: 'amenities',
-  images: 'media',
+  images: 'media'
 };
 
 // Đổi { shortDescription: "..." } -> { short_description: "..." }
@@ -114,10 +100,7 @@ function normalizeApiErrors(apiErrors = {}) {
 // Chọn tab chứa lỗi đầu tiên theo thứ tự tab trên UI.
 function resolveFirstErrorTab(formErrors = {}) {
   const tabOrder = ['general', 'location', 'amenities', 'media'];
-  const tabs = Object.keys(formErrors)
-    .map((field) => FIELD_TAB_MAP[field])
-    .filter(Boolean);
-
+  const tabs = Object.keys(formErrors).map(field => FIELD_TAB_MAP[field]).filter(Boolean);
   if (tabs.length === 0) return 'general';
   return tabs.sort((a, b) => tabOrder.indexOf(a) - tabOrder.indexOf(b))[0];
 }
@@ -129,16 +112,9 @@ function toRelativeImageUrl(url) {
   const match = String(url).match(/^https?:\/\/[^/]+(\/uploads\/.+)$/);
   return match ? match[1] : url;
 }
-
 function toRelativeImageUrls(formData) {
-  return [
-    formData.cover_image,
-    ...(formData.gallery_images || []),
-  ]
-    .filter((url, index, all) => url && all.indexOf(url) === index)
-    .map(toRelativeImageUrl);
+  return [formData.cover_image, ...(formData.gallery_images || [])].filter((url, index, all) => url && all.indexOf(url) === index).map(toRelativeImageUrl);
 }
-
 function toApiGeneralPayload(formData) {
   return {
     // Mã cơ sở lưu trú phải được gửi khi Sửa, nếu không backend giữ nguyên mã cũ.
@@ -159,93 +135,80 @@ function toApiGeneralPayload(formData) {
     starRating: formData.star_rating === '' ? null : Number(formData.star_rating),
     checkInTime: formData.checkin_time || null,
     checkOutTime: formData.checkout_time || null,
-    isFeatured: Boolean(formData.featured),
+    isFeatured: Boolean(formData.featured)
   };
 }
-
 function toApiCreatePayload(formData) {
   const imageUrls = toRelativeImageUrls(formData);
   const coverImageUrl = toRelativeImageUrl(formData.cover_image);
-
   return {
     // Backend dùng camelCase và cần mã cơ sở lưu trú khi tạo mới.
     code: String(formData.code || '').trim(),
     name: String(formData.name || '').trim(),
-
     // type_id của UI phải đổi thành typeId dạng số cho API.
     typeId: Number(formData.type_id),
-
     // Trang Create luôn tạo bản nháp; đổi trạng thái do trang Sửa đảm nhận.
     status: 0,
     locationId: Number(formData.location_id),
     wardId: formData.ward_id ? Number(formData.ward_id) : null,
-
     addressLine: String(formData.address || '').trim() || null,
     shortDescription: formData.short_description || null,
     description: formData.full_description || null,
-
     phone: formData.phone || null,
     email: formData.email || null,
     websiteUrl: formData.website || null,
-
     latitude: formData.latitude === '' ? null : Number(formData.latitude),
     longitude: formData.longitude === '' ? null : Number(formData.longitude),
-    starRating:
-      formData.star_rating === '' ? null : Number(formData.star_rating),
-
+    starRating: formData.star_rating === '' ? null : Number(formData.star_rating),
     checkInTime: formData.checkin_time || null,
     checkOutTime: formData.checkout_time || null,
     isFeatured: Boolean(formData.featured),
-
     // Ảnh bìa phải được đánh dấu rõ để backend cho phép trạng thái ACTIVE.
-    images: imageUrls.map((imageUrl) => ({
+    images: imageUrls.map(imageUrl => ({
       imageUrl,
-      isCover: imageUrl === coverImageUrl,
+      isCover: imageUrl === coverImageUrl
     })),
-
     // Backend đọc key "amenities" dạng [{ amenityId, isChargeable, note }] (spec 5.2).
     // Nếu gửi "amenityIds" thì service bỏ qua im lặng → tiện nghi không được ghi.
-    amenities: (formData.amenities || []).map((item) => ({
+    amenities: (formData.amenities || []).map(item => ({
       amenityId: Number(item.amenityId),
       isChargeable: Boolean(item.isChargeable),
-      note: String(item.note || '').trim() || null,
+      note: String(item.note || '').trim() || null
     })),
-
     // Backend nhận distanceMeters, không nhận distance + distance_unit
     // theo format cũ của UI.
-    attractions: (formData.attractions || []).map((item) => ({
+    attractions: (formData.attractions || []).map(item => ({
       attractionId: Number(item.attraction_id),
       distanceMeters: Number(item.distance_meters) || 0,
-      note: String(item.notes || '').trim() || null,
-    })),
-  }
+      note: String(item.notes || '').trim() || null
+    }))
+  };
 }
-
 function toApiRelatedPayload(formData) {
   const imageUrls = toRelativeImageUrls(formData);
   const coverImageUrl = toRelativeImageUrl(formData.cover_image);
-
   return {
-    images: imageUrls.map((imageUrl) => ({
+    images: imageUrls.map(imageUrl => ({
       imageUrl,
-      isCover: imageUrl === coverImageUrl,
+      isCover: imageUrl === coverImageUrl
     })),
     // Cùng shape với create để backend replaceAmenities xử lý được.
-    amenities: (formData.amenities || []).map((item) => ({
+    amenities: (formData.amenities || []).map(item => ({
       amenityId: Number(item.amenityId),
       isChargeable: Boolean(item.isChargeable),
-      note: String(item.note || '').trim() || null,
+      note: String(item.note || '').trim() || null
     })),
-    attractions: (formData.attractions || []).map((item) => ({
+    attractions: (formData.attractions || []).map(item => ({
       attractionId: Number(item.attraction_id),
       distanceMeters: Number(item.distance_meters) || 0,
-      note: String(item.notes || '').trim() || null,
-    })),
+      note: String(item.notes || '').trim() || null
+    }))
   };
 }
-
 export default function AccommodationFormPage() {
-  const { id } = useParams();
+  const {
+    id
+  } = useParams();
   const isEdit = Boolean(id);
   const navigate = useNavigate();
 
@@ -285,7 +248,6 @@ export default function AccommodationFormPage() {
   // Giữ note/chargeable của tiện nghi vừa bỏ chọn trong phiên làm việc,
   // để tick lại không phải nhập lại từ đầu.
   const amenityDraftCache = useRef({});
-
   const [errors, setErrors] = useState({});
 
   // GET detail trả 404 (không tồn tại / ngoài scope) → hiện màn riêng
@@ -312,37 +274,37 @@ export default function AccommodationFormPage() {
 
     // Giữ giá trị cũ để khôi phục nếu upload lỗi (vd ảnh bìa đang có trên server).
     const previousValue = formData[field];
-    const previews = files.map((file) => URL.createObjectURL(file));
-    setUploadingCount((count) => count + 1);
+    const previews = files.map(file => URL.createObjectURL(file));
+    setUploadingCount(count => count + 1);
 
     // Hiển thị preview ngay, không bắt người dùng chờ request upload hoàn tất.
-    setFormData((prev) => ({
+    setFormData(prev => ({
       ...prev,
-      [field]: multiple ? [...(prev[field] || []), ...previews] : previews[0] || '',
+      [field]: multiple ? [...(prev[field] || []), ...previews] : previews[0] || ''
     }));
-
     try {
-      const urls = await Promise.all(files.map((file) => accommodationsApi.uploadImage(file)));
-      setFormData((prev) => ({
+      const urls = await Promise.all(files.map(file => accommodationsApi.uploadImage(file)));
+      setFormData(prev => ({
         ...prev,
-        [field]: multiple ? [...(prev[field] || []).filter((url) => !previews.includes(url)), ...urls] : urls[0] || '',
+        [field]: multiple ? [...(prev[field] || []).filter(url => !previews.includes(url)), ...urls] : urls[0] || ''
       }));
-      previews.forEach((url) => URL.revokeObjectURL(url));
+      previews.forEach(url => URL.revokeObjectURL(url));
       console.log("[2] upload xong, nhận URL backend:", urls);
     } catch (error) {
       // Upload lỗi thì gỡ blob khỏi form, tránh submit nhầm URL blob:.
-      setFormData((prev) => ({
+      setFormData(prev => ({
         ...prev,
-        [field]: multiple
-          ? (prev[field] || []).filter((url) => !previews.includes(url))
-          : previousValue || '',
+        [field]: multiple ? (prev[field] || []).filter(url => !previews.includes(url)) : previousValue || ''
       }));
-      previews.forEach((url) => URL.revokeObjectURL(url));
+      previews.forEach(url => URL.revokeObjectURL(url));
       console.error("[3] upload thất bại:", error);
-      setErrors((prev) => ({ ...prev, images: error.message || 'Không thể tải ảnh lên.' }));
+      setErrors(prev => ({
+        ...prev,
+        images: error.message || 'Không thể tải ảnh lên.'
+      }));
     } finally {
       // Luôn giảm bộ đếm kể cả thành công hay lỗi để không kẹt trạng thái chặn submit.
-      setUploadingCount((count) => count - 1);
+      setUploadingCount(count => count - 1);
       console.groupEnd();
     }
   };
@@ -350,15 +312,11 @@ export default function AccommodationFormPage() {
   // Form Sửa phải đọc detail thật vì list chỉ có summary và AdminContext còn giữ mock.
   useEffect(() => {
     if (!isEdit) return;
-
     let cancelled = false;
-
     async function loadAccommodationDetail() {
       try {
         const payload = await accommodationsApi.getDetail(id);
-
         if (cancelled) return;
-
         const detail = payload.data;
         const images = detail.images || [];
         const mappedFormData = {
@@ -386,30 +344,27 @@ export default function AccommodationFormPage() {
           hasManager: Boolean(detail.hasManager),
           featured: Boolean(detail.isFeatured),
           cover_image: buildImageUrl(detail.coverImageUrl) || '',
-          gallery_images: images
-            .filter((image) => !image.isCover)
-            .map((image) => buildImageUrl(image.imageUrl)),
-          amenities: (detail.amenities || []).map((amenity) => ({
+          gallery_images: images.filter(image => !image.isCover).map(image => buildImageUrl(image.imageUrl)),
+          amenities: (detail.amenities || []).map(amenity => ({
             amenityId: Number(amenity.amenityId ?? amenity.id),
             note: amenity.note || '',
-            isChargeable: Boolean(amenity.isChargeable),
+            isChargeable: Boolean(amenity.isChargeable)
           })),
-          attractions: (detail.attractions || []).map((attraction) => ({
+          attractions: (detail.attractions || []).map(attraction => ({
             attraction_id: attraction.attractionId,
             distance_meters: attraction.distanceMeters || 0,
             distance_unit: 'm',
             distance: attraction.distanceMeters || 0,
-            notes: attraction.note || '',
-          })),
+            notes: attraction.note || ''
+          }))
         };
-
         setFormData(mappedFormData);
       } catch (error) {
         if (!cancelled) {
           console.error('[ERROR] Không tải được detail để sửa:', {
             message: error.message,
             status: error.status,
-            errorCode: error.errorCode,
+            errorCode: error.errorCode
           });
 
           // 404: bản ghi không tồn tại hoặc ngoài scope — chặn form sớm.
@@ -419,13 +374,13 @@ export default function AccommodationFormPage() {
           }
 
           // Lỗi khác (500/network): vẫn cho mở form, hiện banner chung.
-          setErrors({ form: error.message });
+          setErrors({
+            form: error.message
+          });
         }
       }
     }
-
     loadAccommodationDetail();
-
     return () => {
       cancelled = true;
     };
@@ -434,27 +389,18 @@ export default function AccommodationFormPage() {
   // Điểm đến + tiện nghi: chỉ cần nạp một lần khi mở form.
   useEffect(() => {
     let cancelled = false;
-
     async function loadStaticLookups() {
       setIsLoadingLookups(true);
       setLookupError(null);
-
       try {
-        const [locationItems, amenityItems] = await Promise.all([
-          lookupsApi.getLocations(),
-          lookupsApi.getAmenities('accommodation')
-        ]);
-
+        const [locationItems, amenityItems] = await Promise.all([lookupsApi.getLocations(), lookupsApi.getAmenities('accommodation')]);
         if (cancelled) return;
-
         setLookupLocations(locationItems);
-        setLookupAmenities(
-          amenityItems.map((item) => ({
-            id: item.id,
-            name: item.name,
-            category: item.categoryName || 'Khác'
-          }))
-        );
+        setLookupAmenities(amenityItems.map(item => ({
+          id: item.id,
+          name: item.name,
+          category: item.categoryName || 'Khác'
+        })));
       } catch (error) {
         if (!cancelled) {
           console.error('[ERROR] Không nạp được lookup tĩnh:', error);
@@ -466,7 +412,6 @@ export default function AccommodationFormPage() {
         }
       }
     }
-
     loadStaticLookups();
     return () => {
       cancelled = true;
@@ -474,43 +419,30 @@ export default function AccommodationFormPage() {
   }, []);
 
   // Điểm đến hợp lệ → suy ra tỉnh/thành (API đã trả sẵn provinceId + provinceName).
-  const currentProvince = useMemo(
-    () => getProvinceOfLocation(formData.location_id, lookupLocations),
-    [formData.location_id, lookupLocations]
-  );
+  const currentProvince = useMemo(() => getProvinceOfLocation(formData.location_id, lookupLocations), [formData.location_id, lookupLocations]);
 
   // Đổi điểm đến → nạp lại phường/xã theo tỉnh và điểm tham quan theo điểm đến.
   useEffect(() => {
     let cancelled = false;
-
     async function loadLocationLookups() {
       const locationId = formData.location_id;
       const provinceId = currentProvince ? currentProvince.id : null;
-
       if (!locationId) {
         setLookupWards([]);
         setLookupAttractions([]);
         return;
       }
-
       try {
-        const [wardItems, attractionItems] = await Promise.all([
-          lookupsApi.getWards(provinceId),
-          lookupsApi.getAttractions(Number(locationId), true)
-        ]);
-
+        const [wardItems, attractionItems] = await Promise.all([lookupsApi.getWards(provinceId), lookupsApi.getAttractions(Number(locationId), true)]);
         if (cancelled) return;
-
         setLookupWards(wardItems);
-        setLookupAttractions(
-          attractionItems.map((item) => ({
-            id: item.id,
-            name: item.name,
-            address: item.addressLine,
-            image: item.imageUrl,
-            is_active: Boolean(item.isActive)
-          }))
-        );
+        setLookupAttractions(attractionItems.map(item => ({
+          id: item.id,
+          name: item.name,
+          address: item.addressLine,
+          image: item.imageUrl,
+          is_active: Boolean(item.isActive)
+        })));
         setLookupError(null);
       } catch (error) {
         if (!cancelled) {
@@ -521,7 +453,6 @@ export default function AccommodationFormPage() {
         }
       }
     }
-
     loadLocationLookups();
     return () => {
       cancelled = true;
@@ -530,12 +461,10 @@ export default function AccommodationFormPage() {
 
   // "Điểm đến" dropdown: nhãn kèm tỉnh/thành để người dùng phân biệt.
   const locationSelectOptions = useMemo(() => {
-    return lookupLocations
-      .map((loc) => ({
-        value: String(loc.id),
-        label: loc.provinceName ? `${loc.name} (${loc.provinceName})` : loc.name
-      }))
-      .sort((a, b) => a.label.localeCompare(b.label, 'vi'));
+    return lookupLocations.map(loc => ({
+      value: String(loc.id),
+      label: loc.provinceName ? `${loc.name} (${loc.provinceName})` : loc.name
+    })).sort((a, b) => a.label.localeCompare(b.label, 'vi'));
   }, [lookupLocations]);
 
   // Phường/xã thuộc tỉnh/thành của điểm đến đang chọn.
@@ -544,10 +473,8 @@ export default function AccommodationFormPage() {
   // Điểm tham quan thuộc điểm đến đang chọn.
   // BE đã lọc theo locationId; ở đây chỉ giấu điểm ngừng hoạt động nếu chưa liên kết.
   const locationAttractions = useMemo(() => {
-    return lookupAttractions.filter((att) => {
-      const isAlreadyLinked = (formData.attractions || []).some(
-        (a) => Number(a.attraction_id) === Number(att.id)
-      );
+    return lookupAttractions.filter(att => {
+      const isAlreadyLinked = (formData.attractions || []).some(a => Number(a.attraction_id) === Number(att.id));
       return att.is_active || isAlreadyLinked;
     });
   }, [lookupAttractions, formData.attractions]);
@@ -555,32 +482,38 @@ export default function AccommodationFormPage() {
   // Group amenities by category
   const amenitiesByCategory = useMemo(() => {
     const grouped = {};
-    lookupAmenities.forEach((item) => {
+    lookupAmenities.forEach(item => {
       const cat = item.category || 'Khác';
       if (!grouped[cat]) grouped[cat] = [];
       grouped[cat].push(item);
     });
     return grouped;
   }, [lookupAmenities]);
-
-  const handleChange = (e) => {
-    const { name, value, type, checked } = e.target;
-    setFormData((prev) => ({
+  const handleChange = e => {
+    const {
+      name,
+      value,
+      type,
+      checked
+    } = e.target;
+    setFormData(prev => ({
       ...prev,
       [name]: type === 'checkbox' ? checked : value
     }));
     if (errors[name]) {
-      setErrors((prev) => ({ ...prev, [name]: null }));
+      setErrors(prev => ({
+        ...prev,
+        [name]: null
+      }));
     }
   };
 
   // Đổi điểm đến không hỏi xác nhận; dữ liệu phụ thuộc sẽ được nạp lại tự động.
-  const handleLocationChange = (e) => {
+  const handleLocationChange = e => {
     const newLocationId = e.target.value;
     const newIdStr = String(newLocationId);
     if (newIdStr === String(formData.location_id)) return;
-
-    setFormData((prev) => ({
+    setFormData(prev => ({
       ...prev,
       location_id: newLocationId,
       // Điểm đến đổi thì reset phường/xã vì có thể khác tỉnh.
@@ -588,46 +521,43 @@ export default function AccommodationFormPage() {
       ward: '',
       attractions: []
     }));
-
     if (errors.location_id || errors.ward_id || errors.wardId) {
-      setErrors((prev) => ({
+      setErrors(prev => ({
         ...prev,
         location_id: null,
         ward_id: null,
-        wardId: null,
+        wardId: null
       }));
     }
   };
 
   // Phường/xã lưu cả id (BE cần wardId) và tên (để hiển thị).
-  const handleWardChange = (e) => {
+  const handleWardChange = e => {
     const wardId = e.target.value;
-    const selected = availableWards.find((w) => String(w.id) === wardId);
-
-    setFormData((prev) => ({
+    const selected = availableWards.find(w => String(w.id) === wardId);
+    setFormData(prev => ({
       ...prev,
       ward_id: wardId,
       ward: selected ? selected.name : ''
     }));
-
-    setErrors((prev) => ({
+    setErrors(prev => ({
       ...prev,
       ward_id: null,
-      wardId: null,
+      wardId: null
     }));
   };
 
   // Toggle nearby attraction selection
-  const handleAttractionToggle = (attractionId) => {
+  const handleAttractionToggle = attractionId => {
     const idNum = Number(attractionId);
-    setFormData((prev) => {
+    setFormData(prev => {
       const current = prev.attractions || [];
-      const exists = current.find((a) => Number(a.attraction_id) === idNum);
+      const exists = current.find(a => Number(a.attraction_id) === idNum);
       if (exists) {
         // Uncheck: remove from associations without deleting master record
         return {
           ...prev,
-          attractions: current.filter((a) => Number(a.attraction_id) !== idNum)
+          attractions: current.filter(a => Number(a.attraction_id) !== idNum)
         };
       } else {
         // Check: add new association
@@ -649,11 +579,14 @@ export default function AccommodationFormPage() {
   // Update attraction association fields (distance, unit, notes)
   const handleAttractionFieldChange = (attractionId, field, value) => {
     const idNum = Number(attractionId);
-    setFormData((prev) => {
+    setFormData(prev => {
       const current = prev.attractions || [];
-      const updated = current.map((item) => {
+      const updated = current.map(item => {
         if (Number(item.attraction_id) === idNum) {
-          const next = { ...item, [field]: value };
+          const next = {
+            ...item,
+            [field]: value
+          };
           if (field === 'distance' || field === 'distance_unit') {
             const rawDist = field === 'distance' ? value : item.distance;
             const dist = parseFloat(rawDist) || 0;
@@ -666,63 +599,64 @@ export default function AccommodationFormPage() {
         }
         return item;
       });
-      return { ...prev, attractions: updated };
+      return {
+        ...prev,
+        attractions: updated
+      };
     });
   };
-
-  const handleAmenityToggle = (amenityId) => {
+  const handleAmenityToggle = amenityId => {
     const idNum = Number(amenityId);
-
-    setFormData((prev) => {
+    setFormData(prev => {
       const current = prev.amenities || [];
-      const existing = current.find(
-        (item) => Number(item.amenityId) === idNum,
-      );
-
+      const existing = current.find(item => Number(item.amenityId) === idNum);
       if (existing) {
         // Lưu nháp trước khi bỏ chọn để tick lại vẫn còn note đã nhập.
         amenityDraftCache.current[idNum] = {
           note: existing.note || '',
-          isChargeable: Boolean(existing.isChargeable),
+          isChargeable: Boolean(existing.isChargeable)
         };
         return {
           ...prev,
-          amenities: current.filter(
-            (item) => Number(item.amenityId) !== idNum,
-          ),
+          amenities: current.filter(item => Number(item.amenityId) !== idNum)
         };
       }
-
       const draft = amenityDraftCache.current[idNum] || {
         note: '',
-        isChargeable: false,
+        isChargeable: false
       };
       return {
         ...prev,
-        amenities: [...current, { amenityId: idNum, ...draft }],
+        amenities: [...current, {
+          amenityId: idNum,
+          ...draft
+        }]
       };
     });
-
     if (errors.amenities) {
-      setErrors((prev) => ({ ...prev, amenities: null }));
+      setErrors(prev => ({
+        ...prev,
+        amenities: null
+      }));
     }
   };
-
   const handleAmenityFieldChange = (amenityId, field, value) => {
     const idNum = Number(amenityId);
-    setFormData((prev) => ({
+    setFormData(prev => ({
       ...prev,
-      amenities: (prev.amenities || []).map((item) =>
-        Number(item.amenityId) === idNum ? { ...item, [field]: value } : item,
-      ),
+      amenities: (prev.amenities || []).map(item => Number(item.amenityId) === idNum ? {
+        ...item,
+        [field]: value
+      } : item)
     }));
-
     if (errors.amenities) {
-      setErrors((prev) => ({ ...prev, amenities: null }));
+      setErrors(prev => ({
+        ...prev,
+        amenities: null
+      }));
     }
   };
-
-  const handleSubmit = async (e) => {
+  const handleSubmit = async e => {
     e.preventDefault();
 
     // Chặn double-submit: request trước chưa xong thì bỏ qua lần bấm thêm.
@@ -730,11 +664,13 @@ export default function AccommodationFormPage() {
 
     // Ảnh còn upload thì preview là blob:, chưa có URL backend để lưu.
     if (uploadingCount > 0) {
-      setErrors((prev) => ({ ...prev, images: 'Ảnh đang tải lên, vui lòng đợi hoàn tất.' }));
+      setErrors(prev => ({
+        ...prev,
+        images: 'Ảnh đang tải lên, vui lòng đợi hoàn tất.'
+      }));
       setActiveTab('media');
       return;
     }
-
     const clientErrors = {};
     if (!String(formData.address || '').trim()) {
       clientErrors.address = 'Vui lòng nhập địa chỉ.';
@@ -745,43 +681,38 @@ export default function AccommodationFormPage() {
     if (!isEdit && !String(formData.short_description || '').trim()) {
       clientErrors.short_description = 'Vui lòng nhập mô tả tóm tắt.';
     }
-    const hasTooLongAmenityNote = (formData.amenities || []).some(
-      (item) => String(item.note || '').length > 1000,
-    );
+    const hasTooLongAmenityNote = (formData.amenities || []).some(item => String(item.note || '').length > 1000);
     if (hasTooLongAmenityNote) {
       clientErrors.amenities = 'Ghi chú tiện nghi tối đa 1000 ký tự.';
     }
     if (Object.keys(clientErrors).length > 0) {
-      setErrors((prev) => ({ ...prev, ...clientErrors }));
+      setErrors(prev => ({
+        ...prev,
+        ...clientErrors
+      }));
       // Lỗi địa chỉ/phường nằm ở tab location, mô tả nằm ở general.
       setActiveTab(resolveFirstErrorTab(clientErrors));
       return;
     }
-
-    const payload = isEdit
-      ? { ...toApiGeneralPayload(formData), ...toApiRelatedPayload(formData) }
-      : {
-        ...formData,
-        location_id: Number(formData.location_id),
-        ward_id: formData.ward_id ? Number(formData.ward_id) : null,
-        star_rating: Number(formData.star_rating),
-        attractions: (formData.attractions || []).map((a) => ({
-          attraction_id: Number(a.attraction_id),
-          distance: Number(a.distance) || 0,
-          distance_unit: a.distance_unit || 'km',
-          distance_meters:
-            (a.distance_unit || 'km') === 'km'
-              ? Math.round(Number(a.distance) * 1000)
-              : Math.round(Number(a.distance) || 0),
-          notes: (a.notes || '').trim()
-        }))
-      };
-
+    const payload = isEdit ? {
+      ...toApiGeneralPayload(formData),
+      ...toApiRelatedPayload(formData)
+    } : {
+      ...formData,
+      location_id: Number(formData.location_id),
+      ward_id: formData.ward_id ? Number(formData.ward_id) : null,
+      star_rating: Number(formData.star_rating),
+      attractions: (formData.attractions || []).map(a => ({
+        attraction_id: Number(a.attraction_id),
+        distance: Number(a.distance) || 0,
+        distance_unit: a.distance_unit || 'km',
+        distance_meters: (a.distance_unit || 'km') === 'km' ? Math.round(Number(a.distance) * 1000) : Math.round(Number(a.distance) || 0),
+        notes: (a.notes || '').trim()
+      }))
+    };
     console.group("[AccommodationFormPage.handleSubmit]");
     console.log("[1] gửi", isEdit ? "PUT" : "POST", "| trạng thái:", getStatusValue(formData.status));
-
     setIsSubmitting(true);
-
     try {
       if (isEdit) {
         await accommodationsApi.update(id, payload);
@@ -798,9 +729,8 @@ export default function AccommodationFormPage() {
         message: error.message,
         status: error.status,
         errorCode: error.errorCode,
-        errors: error.errors,
+        errors: error.errors
       });
-
       if (error.errors && Object.keys(error.errors).length > 0) {
         // Đổi key API -> key input rồi mở tab chứa lỗi đầu tiên.
         const fieldErrors = normalizeApiErrors(error.errors);
@@ -808,7 +738,9 @@ export default function AccommodationFormPage() {
         setActiveTab(resolveFirstErrorTab(fieldErrors));
       } else {
         // 401/500/INVALID_STATE... không gắn field → hiện banner chung.
-        setErrors({ form: error.message });
+        setErrors({
+          form: error.message
+        });
         setActiveTab('general');
       }
     } finally {
@@ -819,108 +751,90 @@ export default function AccommodationFormPage() {
 
   // GET detail trả 404 → chặn form, hiện màn riêng (cùng pattern RoomTypeFormPage).
   if (isNotFound) {
-    return (
-      <div className="admin-page">
-        <PageHeader
-          title="Không tìm thấy cơ sở lưu trú"
-          breadcrumb={[
-            { label: 'Cơ sở lưu trú', path: '/admin/accommodations' },
-            { label: 'Lỗi' }
-          ]}
-        />
-        <div className="admin-card" style={{ padding: '40px', textAlign: 'center' }}>
-          <AlertCircle size={36} color="#DC2626" style={{ margin: '0 auto 12px' }} />
+    return <div className="admin-page">
+        <PageHeader title="Không tìm thấy cơ sở lưu trú" breadcrumb={[{
+        label: 'Cơ sở lưu trú',
+        path: '/admin/accommodations'
+      }, {
+        label: 'Lỗi'
+      }]} />
+        <div className="admin-card" style={{
+        padding: '40px',
+        textAlign: 'center'
+      }}>
+          <AlertCircle size={36} color="#DC2626" style={{
+          margin: '0 auto 12px'
+        }} />
           <h3>Cơ sở lưu trú không tồn tại hoặc đã bị gỡ bỏ.</h3>
-          <p style={{ color: '#6B7280', marginTop: '6px' }}>
+          <p style={{
+          color: '#6B7280',
+          marginTop: '6px'
+        }}>
             ID #{id} không có trong dữ liệu bạn được phép quản lý.
           </p>
-          <button
-            type="button"
-            className="btn btn-primary"
-            style={{ marginTop: '16px' }}
-            onClick={() => navigate('/admin/accommodations')}
-          >
+          <button type="button" className="btn btn-primary" style={{
+          marginTop: '16px'
+        }} onClick={() => navigate('/admin/accommodations')}>
             Quay lại danh sách cơ sở lưu trú
           </button>
         </div>
-      </div>
-    );
+      </div>;
   }
-
-  return (
-    <div>
-      <PageHeader
-        title={isEdit ? `Chỉnh sửa cơ sở lưu trú: ${formData.name}` : 'Thêm cơ sở lưu trú mới'}
-        description="Cấu hình thông số kỹ thuật, định vị địa lý, thông tin liên hệ, tiện nghi và điểm tham quan lân cận."
-        breadcrumb={[
-          { label: 'Cơ sở lưu trú', path: '/admin/accommodations' },
-          { label: isEdit ? 'Chỉnh sửa' : 'Thêm mới' }
-        ]}
-        actions={
-          <div style={{ display: 'flex', gap: '8px' }}>
+  return <div>
+      <PageHeader title={isEdit ? `Chỉnh sửa cơ sở lưu trú: ${formData.name}` : 'Thêm cơ sở lưu trú mới'} description="Cấu hình thông số kỹ thuật, định vị địa lý, thông tin liên hệ, tiện nghi và điểm tham quan lân cận." breadcrumb={[{
+      label: 'Cơ sở lưu trú',
+      path: '/admin/accommodations'
+    }, {
+      label: isEdit ? 'Chỉnh sửa' : 'Thêm mới'
+    }]} actions={<div style={{
+      display: 'flex',
+      gap: '8px'
+    }}>
             <Link to="/admin/accommodations" className="btn btn-secondary">
               <ArrowLeft size={14} /> Quay lại danh sách
             </Link>
-            <button
-              type="button"
-              onClick={handleSubmit}
-              className="btn btn-primary"
-              disabled={isSubmitting || uploadingCount > 0}
-            >
+            <button type="button" onClick={handleSubmit} className="btn btn-primary" disabled={isSubmitting || uploadingCount > 0}>
               <Save size={14} />{' '}
-              {uploadingCount > 0
-                ? 'Đang tải ảnh...'
-                : isSubmitting
-                  ? 'Đang lưu...'
-                  : isEdit ? 'Lưu thay đổi' : 'Tạo cơ sở lưu trú'}
+              {uploadingCount > 0 ? 'Đang tải ảnh...' : isSubmitting ? 'Đang lưu...' : isEdit ? 'Lưu thay đổi' : 'Tạo cơ sở lưu trú'}
             </button>
-          </div>
-        }
-      />
+          </div>} />
 
       {/* Tabs: Exactly 4 consolidated tabs */}
-      <div className="admin-tabs" style={{ marginBottom: '16px' }}>
-        <button
-          type="button"
-          className={`admin-tab ${activeTab === 'general' ? 'active' : ''}`}
-          onClick={() => setActiveTab('general')}
-        >
+      <div className="admin-tabs" style={{
+      marginBottom: '16px'
+    }}>
+        <button type="button" className={`admin-tab ${activeTab === 'general' ? 'active' : ''}`} onClick={() => setActiveTab('general')}>
           Thông tin chung & Liên hệ
         </button>
-        <button
-          type="button"
-          className={`admin-tab ${activeTab === 'location' ? 'active' : ''}`}
-          onClick={() => setActiveTab('location')}
-        >
+        <button type="button" className={`admin-tab ${activeTab === 'location' ? 'active' : ''}`} onClick={() => setActiveTab('location')}>
           Điểm đến & điểm tham quan
         </button>
-        <button
-          type="button"
-          className={`admin-tab ${activeTab === 'amenities' ? 'active' : ''}`}
-          onClick={() => setActiveTab('amenities')}
-        >
+        <button type="button" className={`admin-tab ${activeTab === 'amenities' ? 'active' : ''}`} onClick={() => setActiveTab('amenities')}>
           Tiện nghi ({formData.amenities?.length || 0})
         </button>
-        <button
-          type="button"
-          className={`admin-tab ${activeTab === 'media' ? 'active' : ''}`}
-          onClick={() => setActiveTab('media')}
-        >
+        <button type="button" className={`admin-tab ${activeTab === 'media' ? 'active' : ''}`} onClick={() => setActiveTab('media')}>
           Hình ảnh & Thư viện
         </button>
       </div>
 
-      <form onSubmit={handleSubmit}>
-        {errors.form && (
-          <div className="admin-card" style={{ borderColor: '#E53E3E', marginBottom: '12px' }}>
-            <div className="admin-card-body" style={{ color: '#C53030', fontSize: '13px' }}>
+      <ValidatedForm onSubmit={handleSubmit}>
+        {errors.form && <div className="admin-card" style={{
+        borderColor: '#E53E3E',
+        marginBottom: '12px'
+      }}>
+            <div className="admin-card-body" style={{
+          color: '#C53030',
+          fontSize: '13px'
+        }}>
               {errors.form}
             </div>
-          </div>
-        )}
+          </div>}
         {/* Tab 1: General Information & Contact */}
-        {activeTab === 'general' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        {activeTab === 'general' && <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '20px'
+      }}>
             {/* Property Profile */}
             <div className="admin-card">
               <div className="admin-card-header">
@@ -928,56 +842,37 @@ export default function AccommodationFormPage() {
               </div>
               <div className="admin-card-body">
                 <div className="form-grid">
-                  <FormInput
-                    label="Tên cơ sở lưu trú"
-                    name="name"
-                    value={formData.name}
-                    onChange={handleChange}
-                    placeholder="VD: VietPeace Danang Premier Beach Resort"
-                    required
-                    error={errors.name}
-                  />
+                  <FormInput label="Tên cơ sở lưu trú" name="name" value={formData.name} onChange={handleChange} placeholder="VD: VietPeace Danang Premier Beach Resort" required error={errors.name} />
 
-                  <FormInput
-                    label="Mã cơ sở lưu trú"
-                    name="code"
-                    value={formData.code}
-                    onChange={handleChange}
-                    placeholder="VD: VPD-RES-01"
-                    required
-                    error={errors.code}
-                    helperText="Mã nhận diện nội bộ cho quy trình kế toán và vận hành."
-                  />
+                  <FormInput label="Mã cơ sở lưu trú" name="code" value={formData.code} onChange={handleChange} placeholder="VD: VPD-RES-01" required error={errors.code} helperText="Mã nhận diện nội bộ cho quy trình kế toán và vận hành." />
 
-                  <FormSelect
-                    label="Loại hình lưu trú"
-                    name="type_id"
-                    value={formData.type_id}
-                    onChange={handleChange}
-                    placeholder="Chọn loại hình lưu trú"
-                    options={[
-                      { value: 1, label: 'Khách sạn (Hotel)' },
-                      { value: 2, label: 'Khu nghỉ dưỡng (Resort)' },
-                      { value: 3, label: 'Homestay' }
-                    ]}
-                    error={errors.type_id}
-                    required
-                  />
+                  <FormSelect label="Loại hình lưu trú" name="type_id" value={formData.type_id} onChange={handleChange} placeholder="Chọn loại hình lưu trú" options={[{
+                value: 1,
+                label: 'Khách sạn (Hotel)'
+              }, {
+                value: 2,
+                label: 'Khu nghỉ dưỡng (Resort)'
+              }, {
+                value: 3,
+                label: 'Homestay'
+              }]} error={errors.type_id} required />
 
-                  <FormSelect
-                    label="Hạng sao"
-                    name="star_rating"
-                    value={formData.star_rating}
-                    onChange={handleChange}
-                    options={[
-                      { value: 1, label: '1 Sao' },
-                      { value: 2, label: '2 Sao' },
-                      { value: 3, label: '3 Sao' },
-                      { value: 4, label: '4 Sao' },
-                      { value: 5, label: '5 Sao (Cao cấp)' }
-                    ]}
-                    error={errors.star_rating}
-                  />
+                  <FormSelect label="Hạng sao" name="star_rating" value={formData.star_rating} onChange={handleChange} options={[{
+                value: 1,
+                label: '1 Sao'
+              }, {
+                value: 2,
+                label: '2 Sao'
+              }, {
+                value: 3,
+                label: '3 Sao'
+              }, {
+                value: 4,
+                label: '4 Sao'
+              }, {
+                value: 5,
+                label: '5 Sao (Cao cấp)'
+              }]} error={errors.star_rating} />
 
                   {isEdit && (
                     <FormSelect
@@ -1005,59 +900,27 @@ export default function AccommodationFormPage() {
                     />
                   )}
 
-                  <div className="form-group" style={{ justifyContent: 'center' }}>
-                    <label className="form-checkbox-label" style={{ marginTop: '16px' }}>
-                      <input
-                        type="checkbox"
-                        name="featured"
-                        checked={formData.featured}
-                        onChange={handleChange}
-                      />
+                  <div className="form-group" style={{
+                justifyContent: 'center'
+              }}>
+                    <label className="form-checkbox-label" style={{
+                  marginTop: '16px'
+                }}>
+                      <input type="checkbox" name="featured" checked={formData.featured} onChange={handleChange} />
                       <span>Đặt làm cơ sở nổi bật trên trang chủ</span>
                     </label>
                   </div>
 
-                  <FormInput
-                    label="Giờ nhận phòng (Check-in)"
-                    name="checkin_time"
-                    type="time"
-                    value={formData.checkin_time}
-                    onChange={handleChange}
-                    error={errors.checkin_time}
-                  />
+                  <FormInput label="Giờ nhận phòng (Check-in)" name="checkin_time" type="time" value={formData.checkin_time} onChange={handleChange} error={errors.checkin_time} />
 
-                  <FormInput
-                    label="Giờ trả phòng (Check-out)"
-                    name="checkout_time"
-                    type="time"
-                    value={formData.checkout_time}
-                    onChange={handleChange}
-                    error={errors.checkout_time}
-                  />
+                  <FormInput label="Giờ trả phòng (Check-out)" name="checkout_time" type="time" value={formData.checkout_time} onChange={handleChange} error={errors.checkout_time} />
 
                   <div className="col-span-full">
-                    <FormTextarea
-                      label="Mô tả tóm tắt ngắn"
-                      name="short_description"
-                      value={formData.short_description}
-                      onChange={handleChange}
-                      rows={2}
-                      required
-                      error={errors.short_description}
-                      placeholder="Mô tả tóm tắt 1-2 câu giới thiệu điểm nhấn cơ sở..."
-                    />
+                    <FormTextarea label="Mô tả tóm tắt ngắn" name="short_description" value={formData.short_description} onChange={handleChange} rows={2} required error={errors.short_description} placeholder="Mô tả tóm tắt 1-2 câu giới thiệu điểm nhấn cơ sở..." />
                   </div>
 
                   <div className="col-span-full">
-                    <FormTextarea
-                      label="Mô tả chi tiết đầy đủ"
-                      name="full_description"
-                      value={formData.full_description}
-                      onChange={handleChange}
-                      rows={5}
-                      error={errors.full_description}
-                      placeholder="Mô tả toàn diện về khuôn viên, phong cách thiết kế, trải nghiệm nghỉ dưỡng..."
-                    />
+                    <FormTextarea label="Mô tả chi tiết đầy đủ" name="full_description" value={formData.full_description} onChange={handleChange} rows={5} error={errors.full_description} placeholder="Mô tả toàn diện về khuôn viên, phong cách thiết kế, trải nghiệm nghỉ dưỡng..." />
                   </div>
                 </div>
               </div>
@@ -1070,43 +933,22 @@ export default function AccommodationFormPage() {
               </div>
               <div className="admin-card-body">
                 <div className="form-grid">
-                  <FormInput
-                    label="Số điện thoại lễ tân"
-                    name="phone"
-                    value={formData.phone}
-                    onChange={handleChange}
-                    error={errors.phone}
-                    placeholder="+84 236 388 9999"
-                  />
+                  <FormInput label="Số điện thoại lễ tân" name="phone" value={formData.phone} onChange={handleChange} error={errors.phone} placeholder="+84 236 388 9999" />
 
-                  <FormInput
-                    label="Email đặt phòng"
-                    name="email"
-                    type="email"
-                    value={formData.email}
-                    onChange={handleChange}
-                    error={errors.email}
-                    placeholder="danang.resort@vietpeacestay.vn"
-                  />
+                  <FormInput label="Email đặt phòng" name="email" type="email" value={formData.email} onChange={handleChange} error={errors.email} placeholder="danang.resort@vietpeacestay.vn" />
 
-                  <FormInput
-                    label="Website chính thức"
-                    name="website"
-                    type="url"
-                    value={formData.website}
-                    onChange={handleChange}
-                    error={errors.website}
-                    placeholder="https://vietpeacestay.vn/resorts/danang"
-                  />
+                  <FormInput label="Website chính thức" name="website" type="url" value={formData.website} onChange={handleChange} error={errors.website} placeholder="https://vietpeacestay.vn/resorts/danang" />
                 </div>
               </div>
             </div>
-          </div>
-        )}
+          </div>}
 
         {/* Tab 2: Consolidated "Điểm đến & điểm tham quan" */}
-        {activeTab === 'location' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        {activeTab === 'location' && <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '20px'
+      }}>
             <div className="admin-card">
               <div className="admin-card-header">
                 <div className="admin-card-title">Định vị địa lý & Địa chỉ hành chính</div>
@@ -1115,195 +957,163 @@ export default function AccommodationFormPage() {
                 <div className="form-grid">
                   {/* 1. "Điểm đến" dropdown (NO province dropdown) */}
                   <div className="col-span-full">
-                    <label className="form-label" htmlFor="field-location-id" style={{ fontWeight: 600 }}>
-                      Điểm đến <span style={{ color: '#E53E3E' }}>*</span>
+                    <label className="form-label" htmlFor="field-location-id" style={{
+                  fontWeight: 600
+                }}>
+                      Điểm đến <span style={{
+                    color: '#E53E3E'
+                  }}>*</span>
                     </label>
-                    <select
-                      id="field-location-id"
-                      name="location_id"
-                      className="filter-select"
-                      style={{
-                        width: '100%',
-                        height: '40px',
-                        borderColor: errors.location_id ? '#E53E3E' : '#D9DDE2'
-                      }}
-                      value={formData.location_id || ''}
-                      onChange={handleLocationChange}
-                    >
+                    <select id="field-location-id" name="location_id" className="filter-select" style={{
+                  width: '100%',
+                  height: '40px',
+                  borderColor: errors.location_id ? '#E53E3E' : '#D9DDE2'
+                }} value={formData.location_id || ''} onChange={handleLocationChange}>
                       <option value="">-- Chọn điểm đến --</option>
-                      {locationSelectOptions.map((opt) => (
-                        <option key={opt.value} value={opt.value}>
+                      {locationSelectOptions.map(opt => <option key={opt.value} value={opt.value}>
                           {opt.label}
-                        </option>
-                      ))}
+                        </option>)}
                     </select>
-                    {errors.location_id && (
-                      <p className="form-error" style={{ marginTop: '4px' }}>
+                    {errors.location_id && <p className="form-error" style={{
+                  marginTop: '4px'
+                }}>
                         {errors.location_id}
-                      </p>
-                    )}
-                    <span style={{ fontSize: '12px', color: '#6B7280', marginTop: '4px', display: 'block' }}>
+                      </p>}
+                    <span style={{
+                  fontSize: '12px',
+                  color: '#6B7280',
+                  marginTop: '4px',
+                  display: 'block'
+                }}>
                       Chọn điểm đến để hệ thống tự động xác định Tỉnh/thành, nạp danh sách Phường/xã và các điểm tham quan lân cận trực thuộc.
                     </span>
-                    {isLoadingLookups && (
-                      <span style={{ fontSize: '12px', color: '#2563EB', marginTop: '4px', display: 'block' }}>
+                    {isLoadingLookups && <span style={{
+                  fontSize: '12px',
+                  color: '#2563EB',
+                  marginTop: '4px',
+                  display: 'block'
+                }}>
                         Đang tải danh mục điểm đến / tiện nghi từ server...
-                      </span>
-                    )}
-                    {lookupError && (
-                      <span style={{ fontSize: '12px', color: '#B91C1C', marginTop: '4px', display: 'block' }}>
+                      </span>}
+                    {lookupError && <span style={{
+                  fontSize: '12px',
+                  color: '#B91C1C',
+                  marginTop: '4px',
+                  display: 'block'
+                }}>
                         {lookupError}
-                      </span>
-                    )}
+                      </span>}
                   </div>
 
                   {/* 2. Read-only "Tỉnh/thành: {province name}" text */}
                   <div className="col-span-full">
-                    {formData.location_id ? (
-                      currentProvince ? (
-                        <div
-                          style={{
-                            padding: '10px 14px',
-                            backgroundColor: '#F0FDF4',
-                            border: '1px solid #BBF7D0',
-                            borderRadius: '6px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px'
-                          }}
-                        >
+                    {formData.location_id ? currentProvince ? <div style={{
+                  padding: '10px 14px',
+                  backgroundColor: '#F0FDF4',
+                  border: '1px solid #BBF7D0',
+                  borderRadius: '6px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}>
                           <MapPin size={16} color="#16A34A" />
-                          <span style={{ fontSize: '13.5px', color: '#166534', fontWeight: 600 }}>
+                          <span style={{
+                    fontSize: '13.5px',
+                    color: '#166534',
+                    fontWeight: 600
+                  }}>
                             Tỉnh/thành: {currentProvince.name}
                           </span>
-                        </div>
-                      ) : (
-                        <div
-                          style={{
-                            padding: '10px 14px',
-                            backgroundColor: '#FEF2F2',
-                            border: '1px solid #FECACA',
-                            borderRadius: '6px',
-                            color: '#991B1B',
-                            fontSize: '13px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px'
-                          }}
-                        >
+                        </div> : <div style={{
+                  padding: '10px 14px',
+                  backgroundColor: '#FEF2F2',
+                  border: '1px solid #FECACA',
+                  borderRadius: '6px',
+                  color: '#991B1B',
+                  fontSize: '13px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}>
                           <AlertCircle size={16} />
                           <span>Không xác định được tỉnh/thành cho điểm đến này.</span>
-                        </div>
-                      )
-                    ) : (
-                      <div
-                        style={{
-                          padding: '10px 14px',
-                          backgroundColor: '#F9FAFB',
-                          border: '1px dashed #D1D5DB',
-                          borderRadius: '6px',
-                          color: '#6B7280',
-                          fontSize: '13px'
-                        }}
-                      >
+                        </div> : <div style={{
+                  padding: '10px 14px',
+                  backgroundColor: '#F9FAFB',
+                  border: '1px dashed #D1D5DB',
+                  borderRadius: '6px',
+                  color: '#6B7280',
+                  fontSize: '13px'
+                }}>
                         Tỉnh/thành: <em>(Vui lòng chọn điểm đến ở trên để tự động nhận diện tỉnh/thành)</em>
-                      </div>
-                    )}
+                      </div>}
                   </div>
 
                   {/* 3. "Phường/xã" dropdown and "Địa chỉ" textbox */}
                   <div>
-                    <label className="form-label" htmlFor="field-ward" style={{ fontWeight: 600 }}>
+                    <label className="form-label" htmlFor="field-ward" style={{
+                  fontWeight: 600
+                }}>
                       Phường/xã
                     </label>
-                    <select
-                      id="field-ward"
-                      name="ward_id"
-                      className="filter-select"
-                      style={{ width: '100%', height: '40px' }}
-                      value={formData.ward_id || ''}
-                      onChange={handleWardChange}
-                      disabled={!formData.location_id || availableWards.length === 0}
-                    >
+                    <select id="field-ward" name="ward_id" className="filter-select" style={{
+                  width: '100%',
+                  height: '40px'
+                }} value={formData.ward_id || ''} onChange={handleWardChange} disabled={!formData.location_id || availableWards.length === 0}>
                       <option value="">
-                        {!formData.location_id
-                          ? '-- Vui lòng chọn điểm đến trước --'
-                          : availableWards.length === 0
-                            ? '-- Không có dữ liệu phường/xã --'
-                            : '-- Chọn phường/xã --'}
+                        {!formData.location_id ? '-- Vui lòng chọn điểm đến trước --' : availableWards.length === 0 ? '-- Không có dữ liệu phường/xã --' : '-- Chọn phường/xã --'}
                       </option>
-                      {availableWards.map((w) => (
-                        <option key={w.id} value={String(w.id)}>
+                      {availableWards.map(w => <option key={w.id} value={String(w.id)}>
                           {w.name}
-                        </option>
-                      ))}
+                        </option>)}
                       {/* Giữ lại phường/xã đã lưu nếu danh sách mới chưa tải xong */}
-                      {formData.ward_id &&
-                        !availableWards.some((w) => String(w.id) === String(formData.ward_id)) && (
-                          <option value={String(formData.ward_id)}>
+                      {formData.ward_id && !availableWards.some(w => String(w.id) === String(formData.ward_id)) && <option value={String(formData.ward_id)}>
                             {formData.ward || 'Phường/xã đã chọn'}
-                          </option>
-                        )}
+                          </option>}
                     </select>
-                    {errors.ward_id && (
-                      <span style={{ color: '#B91C1C', fontSize: '12px', marginTop: '4px', display: 'block' }}>
+                    {errors.ward_id && <span style={{
+                  color: '#B91C1C',
+                  fontSize: '12px',
+                  marginTop: '4px',
+                  display: 'block'
+                }}>
                         {errors.ward_id}
-                      </span>
-                    )}
-                    <span style={{ fontSize: '11.5px', color: '#6B7280', marginTop: '4px', display: 'block' }}>
+                      </span>}
+                    <span style={{
+                  fontSize: '11.5px',
+                  color: '#6B7280',
+                  marginTop: '4px',
+                  display: 'block'
+                }}>
                       Danh sách phường/xã phụ thuộc vào Tỉnh/thành của điểm đến đã chọn.
                     </span>
                   </div>
 
-                  <FormInput
-                    label="Địa chỉ đường phố cụ thể"
-                    name="address"
-                    value={formData.address}
-                    onChange={handleChange}
-                    placeholder="VD: 268 Đường Võ Nguyên Giáp"
-                    required
-                    error={errors.address}
-                  />
+                  <FormInput label="Địa chỉ đường phố cụ thể" name="address" value={formData.address} onChange={handleChange} placeholder="VD: 268 Đường Võ Nguyên Giáp" required error={errors.address} />
 
                   {/* 4. "Vĩ độ" and "Kinh độ" inputs */}
-                  <FormInput
-                    label="Vĩ độ (Latitude)"
-                    name="latitude"
-                    value={formData.latitude}
-                    onChange={handleChange}
-                    error={errors.latitude}
-                    placeholder="VD: 16.0748"
-                    helperText="Tọa độ GPS độc lập của cơ sở lưu trú."
-                  />
+                  <FormInput label="Vĩ độ (Latitude)" name="latitude" value={formData.latitude} onChange={handleChange} error={errors.latitude} placeholder="VD: 16.0748" helperText="Tọa độ GPS độc lập của cơ sở lưu trú." />
 
-                  <FormInput
-                    label="Kinh độ (Longitude)"
-                    name="longitude"
-                    value={formData.longitude}
-                    onChange={handleChange}
-                    error={errors.longitude}
-                    placeholder="VD: 108.2467"
-                    helperText="Tọa độ GPS độc lập của cơ sở lưu trú."
-                  />
+                  <FormInput label="Kinh độ (Longitude)" name="longitude" value={formData.longitude} onChange={handleChange} error={errors.longitude} placeholder="VD: 108.2467" helperText="Tọa độ GPS độc lập của cơ sở lưu trú." />
                 </div>
               </div>
             </div>
 
             {/* 5. "Điểm tham quan lân cận" Section WITHIN THIS SAME TAB */}
             <div className="admin-card">
-              <div
-                className="admin-card-header"
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  flexWrap: 'wrap',
-                  gap: '8px'
-                }}
-              >
+              <div className="admin-card-header" style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '8px'
+          }}>
                 <div>
                   <div className="admin-card-title">Điểm tham quan lân cận</div>
-                  <div style={{ fontSize: '12.5px', color: '#6B7280' }}>
+                  <div style={{
+                fontSize: '12.5px',
+                color: '#6B7280'
+              }}>
                     Chọn các điểm du lịch, danh lam thắng cảnh xung quanh cơ sở lưu trú và thiết lập cự ly di chuyển độc lập.
                   </div>
                 </div>
@@ -1313,395 +1123,354 @@ export default function AccommodationFormPage() {
               </div>
 
               <div className="admin-card-body">
-                {errors.attractions && (
-                  <span className="form-error-text">{errors.attractions}</span>
-                )}
-                {!formData.location_id ? (
-                  <div
-                    style={{
-                      padding: '36px 16px',
-                      textAlign: 'center',
-                      backgroundColor: '#F9FAFB',
-                      borderRadius: '6px',
-                      border: '1px dashed #D1D5DB',
-                      color: '#6B7280'
-                    }}
-                  >
-                    <Landmark size={28} color="#9CA3AF" style={{ margin: '0 auto 8px' }} />
-                    <div style={{ fontWeight: 600, color: '#374151' }}>
+                {errors.attractions && <span className="form-error-text">{errors.attractions}</span>}
+                {!formData.location_id ? <div style={{
+              padding: '36px 16px',
+              textAlign: 'center',
+              backgroundColor: '#F9FAFB',
+              borderRadius: '6px',
+              border: '1px dashed #D1D5DB',
+              color: '#6B7280'
+            }}>
+                    <Landmark size={28} color="#9CA3AF" style={{
+                margin: '0 auto 8px'
+              }} />
+                    <div style={{
+                fontWeight: 600,
+                color: '#374151'
+              }}>
                       Chưa chọn Điểm đến
                     </div>
-                    <div style={{ fontSize: '12.5px', marginTop: '4px' }}>
+                    <div style={{
+                fontSize: '12.5px',
+                marginTop: '4px'
+              }}>
                       Vui lòng chọn <strong>Điểm đến</strong> ở phần thông tin phía trên để tải và cấu hình danh sách các điểm tham quan lân cận.
                     </div>
-                  </div>
-                ) : locationAttractions.length === 0 ? (
-                  <div
-                    style={{
-                      padding: '36px 16px',
-                      textAlign: 'center',
-                      backgroundColor: '#F9FAFB',
-                      borderRadius: '6px',
-                      border: '1px dashed #D1D5DB',
-                      color: '#6B7280'
-                    }}
-                  >
-                    <Info size={28} color="#9CA3AF" style={{ margin: '0 auto 8px' }} />
-                    <div style={{ fontWeight: 600, color: '#374151' }}>
+                  </div> : locationAttractions.length === 0 ? <div style={{
+              padding: '36px 16px',
+              textAlign: 'center',
+              backgroundColor: '#F9FAFB',
+              borderRadius: '6px',
+              border: '1px dashed #D1D5DB',
+              color: '#6B7280'
+            }}>
+                    <Info size={28} color="#9CA3AF" style={{
+                margin: '0 auto 8px'
+              }} />
+                    <div style={{
+                fontWeight: 600,
+                color: '#374151'
+              }}>
                       Chưa có điểm tham quan nào cho điểm đến này
                     </div>
-                    <div style={{ fontSize: '12.5px', marginTop: '4px' }}>
+                    <div style={{
+                fontSize: '12.5px',
+                marginTop: '4px'
+              }}>
                       Hiện chưa có điểm tham quan nào trong hệ thống thuộc điểm đến đã chọn. Bạn có thể bổ sung trong mục <strong>Điểm tham quan</strong> tại thanh menu bên trái.
                     </div>
-                  </div>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    {locationAttractions.map((att) => {
-                      const linkedItem = (formData.attractions || []).find(
-                        (a) => Number(a.attraction_id) === Number(att.id)
-                      );
-                      const isChecked = Boolean(linkedItem);
-
-                      return (
-                        <div
-                          key={att.id}
-                          style={{
-                            border: isChecked ? '1.5px solid #287A4B' : '1px solid #E5E7EB',
-                            borderRadius: '6px',
-                            backgroundColor: isChecked ? '#FBFDFB' : '#FFFFFF',
-                            padding: '14px 16px',
-                            transition: 'all 0.15s ease'
-                          }}
-                        >
+                  </div> : <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '12px'
+            }}>
+                    {locationAttractions.map(att => {
+                const linkedItem = (formData.attractions || []).find(a => Number(a.attraction_id) === Number(att.id));
+                const isChecked = Boolean(linkedItem);
+                return <div key={att.id} style={{
+                  border: isChecked ? '1.5px solid #287A4B' : '1px solid #E5E7EB',
+                  borderRadius: '6px',
+                  backgroundColor: isChecked ? '#FBFDFB' : '#FFFFFF',
+                  padding: '14px 16px',
+                  transition: 'all 0.15s ease'
+                }}>
                           {/* Row Header: Checkbox + Thumbnail + Name + Address + Status */}
-                          <div
-                            style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                              flexWrap: 'wrap',
-                              gap: '12px'
-                            }}
-                          >
-                            <label
-                              style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '12px',
-                                cursor: 'pointer',
-                                flex: 1,
-                                minWidth: '240px'
-                              }}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={isChecked}
-                                onChange={() => handleAttractionToggle(att.id)}
-                                style={{
-                                  width: '18px',
-                                  height: '18px',
-                                  accentColor: '#287A4B',
-                                  cursor: 'pointer'
-                                }}
-                              />
+                          <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    flexWrap: 'wrap',
+                    gap: '12px'
+                  }}>
+                            <label style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '12px',
+                      cursor: 'pointer',
+                      flex: 1,
+                      minWidth: '240px'
+                    }}>
+                              <input type="checkbox" checked={isChecked} onChange={() => handleAttractionToggle(att.id)} style={{
+                        width: '18px',
+                        height: '18px',
+                        accentColor: '#287A4B',
+                        cursor: 'pointer'
+                      }} />
 
                               {/* Thumbnail */}
-                              <div
-                                style={{
-                                  width: '56px',
-                                  height: '42px',
-                                  borderRadius: '4px',
-                                  overflow: 'hidden',
-                                  backgroundColor: '#F3F4F6',
-                                  border: '1px solid #D9DDE2',
-                                  flexShrink: 0
-                                }}
-                              >
-                                <img
-                                  src={att.image || resortDanangImg}
-                                  alt={att.name}
-                                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                                  onError={(e) => {
-                                    e.target.onerror = null;
-                                    e.target.src = resortDanangImg;
-                                  }}
-                                  referrerPolicy="no-referrer"
-                                />
+                              <div style={{
+                        width: '56px',
+                        height: '42px',
+                        borderRadius: '4px',
+                        overflow: 'hidden',
+                        backgroundColor: '#F3F4F6',
+                        border: '1px solid #D9DDE2',
+                        flexShrink: 0
+                      }}>
+                                <img src={att.image || resortDanangImg} alt={att.name} style={{
+                          width: '100%',
+                          height: '100%',
+                          objectFit: 'cover'
+                        }} onError={e => {
+                          e.target.onerror = null;
+                          e.target.src = resortDanangImg;
+                        }} referrerPolicy="no-referrer" />
                               </div>
 
                               <div>
-                                <div
-                                  style={{
-                                    fontWeight: 600,
-                                    color: '#1F2937',
-                                    fontSize: '13.5px',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '6px'
-                                  }}
-                                >
+                                <div style={{
+                          fontWeight: 600,
+                          color: '#1F2937',
+                          fontSize: '13.5px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px'
+                        }}>
                                   <span>{att.name}</span>
-                                  {!att.is_active && (
-                                    <span
-                                      className="badge badge-danger"
-                                      style={{ fontSize: '10.5px', padding: '1px 6px' }}
-                                    >
+                                  {!att.is_active && <span className="badge badge-danger" style={{
+                            fontSize: '10.5px',
+                            padding: '1px 6px'
+                          }}>
                                       Ngừng hoạt động
-                                    </span>
-                                  )}
+                                    </span>}
                                 </div>
-                                <div style={{ fontSize: '12px', color: '#6B7280', marginTop: '2px' }}>
+                                <div style={{
+                          fontSize: '12px',
+                          color: '#6B7280',
+                          marginTop: '2px'
+                        }}>
                                   {att.address || 'Chưa có địa chỉ chi tiết'}
                                 </div>
                               </div>
                             </label>
 
                             <div>
-                              {isChecked ? (
-                                <span
-                                  className="badge badge-success"
-                                  style={{ fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                                >
+                              {isChecked ? <span className="badge badge-success" style={{
+                        fontSize: '11px',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}>
                                   <CheckCircle2 size={12} /> Đã liên kết ({linkedItem.distance} {linkedItem.distance_unit || 'km'})
-                                </span>
-                              ) : (
-                                <span className="badge badge-neutral" style={{ fontSize: '11px' }}>
+                                </span> : <span className="badge badge-neutral" style={{
+                        fontSize: '11px'
+                      }}>
                                   Chưa liên kết
-                                </span>
-                              )}
+                                </span>}
                             </div>
                           </div>
 
                           {/* 6. EXPAND THAT SAME ROW when checked: distance, unit, notes */}
-                          {isChecked && linkedItem && (
-                            <div
-                              style={{
-                                marginTop: '12px',
-                                paddingTop: '12px',
-                                borderTop: '1px dashed #CBD5E1',
-                                display: 'grid',
-                                gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-                                gap: '14px',
-                                alignItems: 'flex-start'
-                              }}
-                            >
-                              <div style={{ display: 'flex', gap: '8px' }}>
-                                <div style={{ flex: 1 }}>
-                                  <label
-                                    className="form-label"
-                                    style={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}
-                                  >
+                          {isChecked && linkedItem && <div style={{
+                    marginTop: '12px',
+                    paddingTop: '12px',
+                    borderTop: '1px dashed #CBD5E1',
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                    gap: '14px',
+                    alignItems: 'flex-start'
+                  }}>
+                              <div style={{
+                      display: 'flex',
+                      gap: '8px'
+                    }}>
+                                <div style={{
+                        flex: 1
+                      }}>
+                                  <label className="form-label" style={{
+                          fontSize: '12px',
+                          fontWeight: 600,
+                          color: '#374151'
+                        }}>
                                     Khoảng cách:
                                   </label>
-                                  <input
-                                    type="number"
-                                    step="0.1"
-                                    min="0"
-                                    className="filter-input"
-                                    style={{ width: '100%', height: '36px' }}
-                                    value={linkedItem.distance ?? ''}
-                                    onChange={(e) =>
-                                      handleAttractionFieldChange(att.id, 'distance', e.target.value)
-                                    }
-                                    placeholder="VD: 3.5 hoặc 350"
-                                  />
+                                  <FieldError name={`field-57333-${att?.id ?? att?.day ?? att}`} /><input type="number" step="0.1" min="0" className="filter-input" style={{
+                          width: '100%',
+                          height: '36px'
+                        }} value={linkedItem.distance ?? ''} onChange={e => handleAttractionFieldChange(att.id, 'distance', e.target.value)} placeholder="VD: 3.5 hoặc 350" name={`field-57333-${att?.id ?? att?.day ?? att}`} data-validation-label="Khoảng cách" />
                                 </div>
-                                <div style={{ width: '85px' }}>
-                                  <label
-                                    className="form-label"
-                                    style={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}
-                                  >
+                                <div style={{
+                        width: '85px'
+                      }}>
+                                  <label className="form-label" style={{
+                          fontSize: '12px',
+                          fontWeight: 600,
+                          color: '#374151'
+                        }}>
                                     Đơn vị:
                                   </label>
-                                  <select
-                                    className="filter-select"
-                                    style={{ width: '100%', height: '36px' }}
-                                    value={linkedItem.distance_unit || 'km'}
-                                    onChange={(e) =>
-                                      handleAttractionFieldChange(att.id, 'distance_unit', e.target.value)
-                                    }
-                                  >
+                                  <select className="filter-select" style={{
+                          width: '100%',
+                          height: '36px'
+                        }} value={linkedItem.distance_unit || 'km'} onChange={e => handleAttractionFieldChange(att.id, 'distance_unit', e.target.value)}>
                                     <option value="km">km</option>
                                     <option value="m">m</option>
                                   </select>
                                 </div>
                               </div>
 
-                              <div style={{ gridColumn: 'span 2' }}>
-                                <label
-                                  className="form-label"
-                                  style={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}
-                                >
+                              <div style={{
+                      gridColumn: 'span 2'
+                    }}>
+                                <label className="form-label" style={{
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        color: '#374151'
+                      }}>
                                   Ghi chú:
                                 </label>
-                                <textarea
-                                  className="filter-input"
-                                  style={{
-                                    width: '100%',
-                                    minHeight: '36px',
-                                    height: '36px',
-                                    resize: 'vertical',
-                                    fontSize: '12.5px'
-                                  }}
-                                  rows={1}
-                                  value={linkedItem.notes || ''}
-                                  onChange={(e) =>
-                                    handleAttractionFieldChange(att.id, 'notes', e.target.value)
-                                  }
-                                  placeholder="VD: Cách resort 10 phút lái xe dọc cung đường Hoàng Sa..."
-                                />
+                                <textarea className="filter-input" style={{
+                        width: '100%',
+                        minHeight: '36px',
+                        height: '36px',
+                        resize: 'vertical',
+                        fontSize: '12.5px'
+                      }} rows={1} value={linkedItem.notes || ''} onChange={e => handleAttractionFieldChange(att.id, 'notes', e.target.value)} placeholder="VD: Cách resort 10 phút lái xe dọc cung đường Hoàng Sa..." />
                               </div>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
+                            </div>}
+                        </div>;
+              })}
+                  </div>}
               </div>
             </div>
-          </div>
-        )}
+          </div>}
 
         {/* Tab 3: Amenities */}
-        {activeTab === 'amenities' && (
-          <div className="admin-card">
+        {activeTab === 'amenities' && <div className="admin-card">
             <div className="admin-card-header">
               <div className="admin-card-title">Tiện nghi & Dịch vụ cơ sở lưu trú</div>
-              <span style={{ fontSize: '12px', color: '#6B7280' }}>
+              <span style={{
+            fontSize: '12px',
+            color: '#6B7280'
+          }}>
                 Đã chọn {(formData.amenities || []).length} tiện nghi
               </span>
             </div>
             <div className="admin-card-body">
-              {errors.amenities && (
-                <span className="form-error-text">{errors.amenities}</span>
-              )}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                {Object.entries(amenitiesByCategory).map(([category, items]) => (
-                  <div key={category} style={{ borderBottom: '1px solid #F3F4F6', paddingBottom: '14px' }}>
-                    <h3 style={{ fontSize: '13px', fontWeight: 700, color: '#292D32', marginBottom: '8px' }}>
+              {errors.amenities && <span className="form-error-text">{errors.amenities}</span>}
+              <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '20px'
+          }}>
+                {Object.entries(amenitiesByCategory).map(([category, items]) => <div key={category} style={{
+              borderBottom: '1px solid #F3F4F6',
+              paddingBottom: '14px'
+            }}>
+                    <h3 style={{
+                fontSize: '13px',
+                fontWeight: 700,
+                color: '#292D32',
+                marginBottom: '8px'
+              }}>
                       {category}
                     </h3>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '8px' }}>
-                      {items.map((amenity) => {
-                        const entry = (formData.amenities || []).find(
-                          (item) => Number(item.amenityId) === Number(amenity.id),
-                        );
-                        const isChecked = Boolean(entry);
-                        return (
-                          <div
-                            key={amenity.id}
-                            style={{
-                              display: 'flex',
-                              flexDirection: 'column',
-                              gap: '4px',
-                              padding: '6px 10px',
-                              backgroundColor: isChecked ? '#FEFBE8' : '#F9FAFB',
-                              border: isChecked ? '1px solid #F4C542' : '1px solid #E5E7EB',
-                              borderRadius: '4px'
-                            }}
-                          >
-                            <label className="form-checkbox-label" style={{ padding: 0 }}>
-                              <input
-                                type="checkbox"
-                                checked={isChecked}
-                                onChange={() => handleAmenityToggle(amenity.id)}
-                              />
-                              <span style={{ fontSize: '12.5px' }}>{amenity.name}</span>
+                    <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
+                gap: '8px'
+              }}>
+                      {items.map(amenity => {
+                  const entry = (formData.amenities || []).find(item => Number(item.amenityId) === Number(amenity.id));
+                  const isChecked = Boolean(entry);
+                  return <div key={amenity.id} style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '4px',
+                    padding: '6px 10px',
+                    backgroundColor: isChecked ? '#FEFBE8' : '#F9FAFB',
+                    border: isChecked ? '1px solid #F4C542' : '1px solid #E5E7EB',
+                    borderRadius: '4px'
+                  }}>
+                            <label className="form-checkbox-label" style={{
+                      padding: 0
+                    }}>
+                              <input type="checkbox" checked={isChecked} onChange={() => handleAmenityToggle(amenity.id)} />
+                              <span style={{
+                        fontSize: '12.5px'
+                      }}>{amenity.name}</span>
                             </label>
 
-                            {isChecked && (
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', paddingLeft: '20px' }}>
-                                <input
-                                  type="text"
-                                  className="form-input"
-                                  style={{ fontSize: '12px', padding: '5px 8px' }}
-                                  placeholder="Ghi chú (VD: Mở cửa 06:30–22:00)"
-                                  value={entry.note || ''}
-                                  maxLength={1000}
-                                  onChange={(e) =>
-                                    handleAmenityFieldChange(amenity.id, 'note', e.target.value)
-                                  }
-                                  onKeyDown={(e) => {
-                                    // Tránh Enter trong ô ghi chú kích hoạt submit cả form.
-                                    if (e.key === 'Enter') e.preventDefault();
-                                  }}
-                                />
-                                <label className="form-checkbox-label" style={{ fontSize: '11.5px', color: '#4B5563' }}>
-                                  <input
-                                    type="checkbox"
-                                    checked={Boolean(entry.isChargeable)}
-                                    onChange={(e) =>
-                                      handleAmenityFieldChange(
-                                        amenity.id,
-                                        'isChargeable',
-                                        e.target.checked,
-                                      )
-                                    }
-                                  />
+                            {isChecked && <div style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '4px',
+                      paddingLeft: '20px'
+                    }}>
+                                <FieldError name={`field-63591-${amenity?.id ?? amenity?.day ?? amenity}`} /><input type="text" className="form-input" style={{
+                        fontSize: '12px',
+                        padding: '5px 8px'
+                      }} placeholder="Ghi chú (VD: Mở cửa 06:30–22:00)" value={entry.note || ''} maxLength={1000} onChange={e => handleAmenityFieldChange(amenity.id, 'note', e.target.value)} onKeyDown={e => {
+                        // Tránh Enter trong ô ghi chú kích hoạt submit cả form.
+                        if (e.key === 'Enter') e.preventDefault();
+                      }} name={`field-63591-${amenity?.id ?? amenity?.day ?? amenity}`} data-validation-label="Ghi chú (VD: Mở cửa 06:30–22:00)" />
+                                <label className="form-checkbox-label" style={{
+                        fontSize: '11.5px',
+                        color: '#4B5563'
+                      }}>
+                                  <input type="checkbox" checked={Boolean(entry.isChargeable)} onChange={e => handleAmenityFieldChange(amenity.id, 'isChargeable', e.target.checked)} />
                                   <span>Có thu phí</span>
                                 </label>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
+                              </div>}
+                          </div>;
+                })}
                     </div>
-                  </div>
-                ))}
+                  </div>)}
               </div>
             </div>
-          </div>
-        )}
+          </div>}
 
         {/* Tab 4: Photos & Media */}
-        {activeTab === 'media' && (
-          <div className="admin-card">
+        {activeTab === 'media' && <div className="admin-card">
             <div className="admin-card-header">
               <div className="admin-card-title">Hình ảnh & Bộ sưu tập ảnh</div>
             </div>
             <div className="admin-card-body">
-              {errors.images && (
-                <span className="form-error-text">{errors.images}</span>
-              )}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                <ImageUpload
-                  label="Ảnh bìa chính (Hero Banner)"
-                  images={formData.cover_image ? [formData.cover_image] : []}
-                  onChange={(imgs) => setFormData((prev) => ({ ...prev, cover_image: imgs[0] || '' }))}
-                  onFilesSelected={(files) => uploadImages(files, 'cover_image')}
-                  multiple={false}
-                  helperText="Ảnh chất lượng cao hiển thị ở đầu trang chi tiết, danh sách tìm kiếm và hóa đơn."
-                />
+              {errors.images && <span className="form-error-text">{errors.images}</span>}
+              <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '20px'
+          }}>
+                <ImageUpload label="Ảnh bìa chính (Hero Banner)" images={formData.cover_image ? [formData.cover_image] : []} onChange={imgs => setFormData(prev => ({
+              ...prev,
+              cover_image: imgs[0] || ''
+            }))} onFilesSelected={files => uploadImages(files, 'cover_image')} multiple={false} helperText="Ảnh chất lượng cao hiển thị ở đầu trang chi tiết, danh sách tìm kiếm và hóa đơn." />
 
-                <ImageUpload
-                  label="Bộ sưu tập ảnh khuôn viên (Nhiều ảnh)"
-                  images={formData.gallery_images || []}
-                  onChange={(imgs) => setFormData((prev) => ({ ...prev, gallery_images: imgs }))}
-                  onFilesSelected={(files) => uploadImages(files, 'gallery_images', true)}
-                  multiple={true}
-                  helperText="Tải lên ảnh ngoại cảnh, sảnh đón tiếp, hồ bơi, nhà hàng và cảnh quan xung quanh."
-                />
+                <ImageUpload label="Bộ sưu tập ảnh khuôn viên (Nhiều ảnh)" images={formData.gallery_images || []} onChange={imgs => setFormData(prev => ({
+              ...prev,
+              gallery_images: imgs
+            }))} onFilesSelected={files => uploadImages(files, 'gallery_images', true)} multiple={true} helperText="Tải lên ảnh ngoại cảnh, sảnh đón tiếp, hồ bơi, nhà hàng và cảnh quan xung quanh." />
               </div>
             </div>
-          </div>
-        )}
+          </div>}
 
         {/* Form Actions footer */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '16px' }}>
+        <div style={{
+        display: 'flex',
+        justifyContent: 'flex-end',
+        gap: '10px',
+        marginTop: '16px'
+      }}>
           <Link to="/admin/accommodations" className="btn btn-secondary">
             Hủy
           </Link>
           <button type="submit" className="btn btn-primary" disabled={isSubmitting || uploadingCount > 0}>
             <Save size={14} />{' '}
-            {uploadingCount > 0
-              ? 'Đang tải ảnh...'
-              : isSubmitting
-                ? 'Đang lưu...'
-                : isEdit ? 'Lưu thay đổi' : 'Tạo cơ sở lưu trú'}
+            {uploadingCount > 0 ? 'Đang tải ảnh...' : isSubmitting ? 'Đang lưu...' : isEdit ? 'Lưu thay đổi' : 'Tạo cơ sở lưu trú'}
           </button>
         </div>
-      </form>
-    </div>
-  );
+      </ValidatedForm>
+    </div>;
 }

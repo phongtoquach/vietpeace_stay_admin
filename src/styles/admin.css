@@ -631,6 +631,127 @@
   margin-bottom: 22px;
 }
 
+/* Glass treatment scoped to the admin login. */
+.admin-login-page {
+  min-height: 100vh;
+  min-height: 100svh;
+  padding: 32px 20px;
+  background: linear-gradient(rgba(7, 27, 42, 0.22), rgba(7, 27, 42, 0.36)),
+    url('/images/login-bg.jpg') center / cover no-repeat;
+  color: #FFFFFF;
+}
+
+.admin-login-page .auth-card {
+  max-width: 420px;
+  padding: 32px 28px;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 20px;
+  background: rgba(24, 52, 65, 0.42);
+  -webkit-backdrop-filter: blur(22px) saturate(135%);
+  backdrop-filter: blur(22px) saturate(135%);
+  box-shadow: 0 24px 64px rgba(4, 24, 38, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.admin-login-page .login-brand-name,
+.admin-login-page .auth-title,
+.admin-login-page .form-label,
+.admin-login-page .form-checkbox-label,
+.admin-login-page .login-password-toggle {
+  color: #FFFFFF;
+}
+
+.admin-login-page .login-brand-caption,
+.admin-login-page .auth-subtitle,
+.admin-login-page .login-footer {
+  color: #E5EEF3;
+  line-height: 1.6;
+}
+
+.admin-login-page .auth-title {
+  font-size: 22px;
+  margin-bottom: 8px;
+}
+
+.admin-login-page .form-input {
+  min-height: 44px;
+  border-radius: 10px;
+  border-color: rgba(255, 255, 255, 0.38);
+  background: rgba(255, 255, 255, 0.18);
+  color: #FFFFFF;
+  caret-color: #FFFFFF;
+  transition: background-color 0.2s, border-color 0.2s, box-shadow 0.2s;
+}
+
+.admin-login-page .form-input::placeholder {
+  color: #D8E5EC;
+  opacity: 1;
+}
+
+.admin-login-page .form-input:focus {
+  background: rgba(255, 255, 255, 0.24);
+  border-color: #FFE39A;
+  box-shadow: 0 0 0 3px rgba(255, 227, 154, 0.2);
+}
+
+.admin-login-page .form-input:-webkit-autofill,
+.admin-login-page .form-input:-webkit-autofill:hover,
+.admin-login-page .form-input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #FFFFFF;
+  -webkit-box-shadow: 0 0 0 1000px #476370 inset;
+  caret-color: #FFFFFF;
+}
+
+.admin-login-page .login-forgot-link {
+  color: #FFE39A;
+  text-underline-offset: 3px;
+}
+
+.admin-login-page .login-forgot-link:hover {
+  color: #FFFFFF;
+}
+
+.admin-login-page .form-label .required,
+.admin-login-page .form-error-text {
+  color: #FFD1CD;
+}
+
+.admin-login-page input[type='checkbox'] {
+  accent-color: #F7C844;
+}
+
+.admin-login-page .btn-primary {
+  border-radius: 10px;
+  box-shadow: 0 6px 18px rgba(14, 31, 41, 0.18);
+}
+
+.admin-login-page .login-footer {
+  border-top: 1px solid rgba(255, 255, 255, 0.24);
+}
+
+.admin-login-page a:focus-visible,
+.admin-login-page button:focus-visible,
+.admin-login-page input[type='checkbox']:focus-visible {
+  outline: 2px solid #FFE39A;
+  outline-offset: 4px;
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .admin-login-page .auth-card {
+    background: rgba(24, 52, 65, 0.92);
+  }
+}
+
+@media (max-width: 480px) {
+  .admin-login-page {
+    padding: 24px 16px;
+  }
+
+  .admin-login-page .auth-card {
+    padding: 28px 20px;
+  }
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .sidebar {

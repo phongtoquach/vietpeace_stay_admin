@@ -160,17 +160,17 @@ export default function LoginPage() {
 	};
 
 	return (
-		<div className="auth-page">
+		<div className="auth-page admin-login-page">
 			<div className="auth-card">
 				<div className="auth-brand">
 					<div className="brand-icon-box" style={{ width: '38px', height: '38px' }}>
 						<Hotel size={22} strokeWidth={2.2} />
 					</div>
 					<div style={{ textAlign: 'left' }}>
-						<div style={{ fontSize: '17px', fontWeight: 700, color: '#292D32' }}>
+						<div className="login-brand-name" style={{ fontSize: '17px', fontWeight: 700 }}>
 						VietPeace Stay
 						</div>
-						<div style={{ fontSize: '11px', color: '#6B7280' }}>
+						<div className="login-brand-caption" style={{ fontSize: '11px' }}>
 						HỆ THỐNG QUẢN TRỊ NGHỈ DƯỠNG
 						</div>
 					</div>
@@ -207,7 +207,8 @@ export default function LoginPage() {
 							</label>
 							<Link
 								to="/forgot-password"
-								style={{ fontSize: '12px', color: '#6C4200', textDecoration: 'underline' }}
+								className="login-forgot-link"
+								style={{ fontSize: '12px', textDecoration: 'underline' }}
 							>
 								Quên mật khẩu?
 							</Link>
@@ -230,10 +231,10 @@ export default function LoginPage() {
 								position: 'absolute',
 								right: '8px',
 								top: '50%',
-								transform: 'translateY(-50%)',
-								color: '#6B7280'
+								transform: 'translateY(-50%)'
 								}}
 								aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiển thị mật khẩu'}
+								className="login-password-toggle"
 							>
 								{showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
 							</button>
@@ -263,7 +264,7 @@ export default function LoginPage() {
 					</button>
 				</form>
 
-				<div style={{ marginTop: '20px', paddingTop: '16px', borderTop: '1px solid #E5E7EB', textAlign: 'center', fontSize: '11.5px', color: '#6B7280' }}>
+				<div className="login-footer" style={{ marginTop: '20px', paddingTop: '16px', textAlign: 'center', fontSize: '11.5px' }}>
 					Hệ thống hạ tầng quản trị lưu trú nội bộ. Chỉ dành cho nhân sự được phân quyền.
 				</div>
 			</div>
